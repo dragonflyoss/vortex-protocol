@@ -1,0 +1,53 @@
+name: Lint
+
+on:
+  push:
+    branches: [main, release-*]
+  pull_request:
+    branches: [main, release-*]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Rust cache 
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Set up Clang
+        uses: egor-tensin/setup-clang@v1
+        with:
+          version: latest
+          platform: x64
+
+      - name: Run cargo fmt
+        run: |
+          cargo fmt --all -- --check
+
+      - name: Run cargo clippy
+        run: |
+          cargo clippy --all --all-targets -- -D warnings
+
+      - name: Markdown lint
+        uses: docker://avtodev/markdown-lint:v1@sha256:6aeedc2f49138ce7a1cd0adffc1b1c0321b841dc2102408967d9301c031949ee
+        with:
+          config: '.markdownlint.yml'
+          args: '**/*.md'
+
+      - uses: crate-ci/typos@b74202f74b4346efdbce7801d187ec57b266bac8
+        with:
+          config: .typos.toml
