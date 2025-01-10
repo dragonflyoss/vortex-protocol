@@ -1,0 +1,13 @@
+[package]
+name = "vortex"
+version = "0.1.0"
+description = "A P2P file transfer protocol"
+authors = ["The Dragonfly Developers"]
+homepage = "https://d7y.io/"
+repository = "https://github.com/dragonflyoss/vortex.git"
+keywords = ["dragonfly", "p2p", "file transfer protocol"]
+license = "Apache-2.0"
+readme = "README.md"
+edition = "2021"
+
+[dependencies]
