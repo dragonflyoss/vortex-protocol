@@ -27,11 +27,14 @@
 ///
 /// Protocol Format:
 ///
-///     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-...-+-+-+-+-+-+-+-+
-///     |                    |                   |                    |                         |
-///     | Packet ID (8 bits) |    Tag (7 bits)   |  Length (30 bits)  |   Value (up to 1 GiB)   |
-///     |                    |                   |                    |                         |
-///     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-...-+-+-+-+-+-+-+-+
+/// ```text
+/// -------------------------------------------------------------------------------------------------
+/// |                            |                   |                    |                         |
+/// | Packet Identifier (8 bits) |    Tag (7 bits)   |  Length (30 bits)  |   Value (up to 1 GiB)   |
+/// |                            |                   |                    |                         |
+/// -------------------------------------------------------------------------------------------------
+/// ```
+///
 /// For more information, please refer to the [Vortex Protocol](https://github.com/dragonflyoss/vortex/blob/main/docs/README.md).
 #[derive(Debug, Clone)]
 pub struct Vortex {}
