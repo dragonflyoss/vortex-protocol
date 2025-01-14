@@ -7,44 +7,44 @@ scalable file sharing capabilities.
 ## Protocol Fields
 
 - **Packet Identifier (8 bits):** Uniquely identifies each packet.
-- **Tag (T, 7 bits):** Specifies the type of data in the value field.
-- **Length (L, 30 bits):** Indicates the length (in bytes) of the Value field, supporting up to 1GiB of data.
+- **Tag (T, 8 bits):** Specifies the type of data in the value field.
+- **Length (L, 32 bits):** Indicates the length (in bytes) of the Value field, supporting up to 4GiB of data.
 - **Value (V, variable length):** The actual data, up to 1GiB.
 
 ## Tag Definitions
 
 <!-- markdownlint-disable -->
 
-| Tag   | Name             | Description                                                                                                    |
-| ----- | ---------------- | -------------------------------------------------------------------------------------------------------------- |
-| 0     | Piece Identifier | Composed of `{Task ID}-{Piece ID}`, where the Task ID is a 32-byte SHA-256 value and the Piece ID is a number. |
-| 1     | Piece Content    | The content of a piece, with a maximum size of 1 GiB per piece.                                                |
-| 2-126 | Reserved         | Reserved for future use.                                                                                       |
-| 127   | Error            | Error message.                                                                                                 |
+| Tag   | Name           | Description                                                                                                                                                       |
+| ----- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | Download Piece | Download the content of a piece from a peer. It is composed of `{Task ID}-{Piece ID}`, where the Task ID is a 32-byte SHA-256 value and the Piece ID is a number. |
+| 1     | Piece Content  | The content of a piece, with a maximum size of 1 GiB per piece.                                                                                                   |
+| 2-254 | Reserved       | Reserved for future use.                                                                                                                                          |
+| 255   | Error          | Error message.                                                                                                                                                    |
 
 <!-- markdownlint-restore -->
 
 ## Packet Format
 
-| Packet ID (8 bits) | Tag (7 bits) | Length (30 bits) | Value (up to 1GiB) |
+| Packet ID (8 bits) | Tag (8 bits) | Length (32 bits) | Value (up to 4GiB) |
 | ------------------ | ------------ | ---------------- | ------------------ |
-| 8-bit              | 7-bit        | 30-bit           | variable           |
+| 8-bit              | 8-bit        | 32-bit           | variable           |
 
 - **Packet ID:** 8-bit unsigned integer.
-- **Tag:** 7-bit field describing the content type.
-- **Length:** 30-bit field specifying the size of the Value.
+- **Tag:** 8-bit field describing the content type.
+- **Length:** 32-bit field specifying the size of the Value.
 - **Value:** Actual data, size determined by Length.
 
 ## Behavior
 
-- **Piece ID (Tag=0x00):** Identifies the specific piece of the file.
+- **Download Piece (Tag=0x00):** Download the content of a piece from a peer.
 - **Piece Content (Tag=0x01):** Raw piece data or piece fragments.
-- **Error (Tag=0x7F):** Conveys error.
-- **Reserved Tags:** May be allocated for metadata, compression, encryption, or future protocol extensions.
+- **Error (Tag=0xFF):** Conveys error.
+- **Reserved Tags:** Tags 2-254 may be allocated for metadata, compression, encryption, or future protocol extensions.
 
 ## Example
 
 - **Packet ID:** 0x12
-- **Tag:** 0x00 (piece content)
+- **Tag:** 0x00 (Download Piece)
 - **Length:** 10 (indicating "HelloWorld" is 10 bytes)
 - **Value:** "HelloWorld"
