@@ -14,3 +14,10 @@ edition = "2021"
 thiserror = "1.0"
 rand = "0.8"
 bytes = "1"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "vortex"
+harness = false
