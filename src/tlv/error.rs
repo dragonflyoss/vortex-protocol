@@ -46,7 +46,7 @@ impl TryFrom<u8> for Code {
     type Error = ();
 
     /// Converts a u8 to a Code enum.
-    fn try_from(value: u8) -> std::result::Result<Self, ()> {
+    fn try_from(value: u8) -> Result<Self, ()> {
         match value {
             0 => Ok(Code::Unknown),
             1 => Ok(Code::InvalidArgument),
@@ -116,9 +116,23 @@ impl Error {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+}
 
-    /// from_bytes creates a error request from a byte slice.
-    pub fn from_bytes(bytes: Bytes) -> VortexResult<Self> {
+impl From<Error> for Bytes {
+    // Converts a Error request to a byte slice.
+    fn from(err: Error) -> Self {
+        let mut bytes = BytesMut::with_capacity(err.len());
+        bytes.put_u8(err.code.into());
+        bytes.put_u8(SEPARATOR);
+        bytes.extend_from_slice(err.message.as_bytes());
+        bytes.freeze()
+    }
+}
+
+impl TryFrom<Bytes> for Error {
+    type Error = VortexError;
+
+    fn try_from(bytes: Bytes) -> VortexResult<Self> {
         let mut parts = bytes.splitn(2, |&b| b == SEPARATOR);
 
         let code = parts
@@ -148,15 +162,6 @@ impl Error {
         }
 
         Ok(Error { code, message })
-    }
-
-    /// to_bytes converts the error request to a byte slice.
-    pub fn to_bytes(&self) -> Bytes {
-        let mut bytes = BytesMut::with_capacity(self.len());
-        bytes.put_u8(self.code.into());
-        bytes.put_u8(SEPARATOR);
-        bytes.extend_from_slice(self.message.as_bytes());
-        bytes.freeze()
     }
 }
 
@@ -188,8 +193,8 @@ mod tests {
         let message = "Resource not found".to_string();
         let error = Error::new(code, message.clone());
 
-        let bytes = error.to_bytes();
-        let error_decoded = Error::from_bytes(bytes).unwrap();
+        let bytes: Bytes = error.into();
+        let error_decoded = Error::try_from(bytes).unwrap();
 
         assert_eq!(error_decoded.code(), code);
         assert_eq!(error_decoded.message(), message);
@@ -199,14 +204,14 @@ mod tests {
     fn test_from_bytes_invalid_input() {
         // Test missing separator
         let invalid_bytes = Bytes::from("invalid_input_without_separator");
-        assert!(Error::from_bytes(invalid_bytes).is_err());
+        assert!(Error::try_from(invalid_bytes).is_err());
 
         // Test missing error message
         let invalid_bytes = Bytes::from(format!("{}:", 1));
-        assert!(Error::from_bytes(invalid_bytes).is_err());
+        assert!(Error::try_from(invalid_bytes).is_err());
 
         // Test invalid error code format
         let invalid_bytes = Bytes::from(format!("{}:{}", 256, "Invalid code"));
-        assert!(Error::from_bytes(invalid_bytes).is_err());
+        assert!(Error::try_from(invalid_bytes).is_err());
     }
 }
