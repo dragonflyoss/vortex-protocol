@@ -16,6 +16,7 @@
 
 use crate::error::{Error, Result};
 use bytes::{BufMut, Bytes, BytesMut};
+use std::convert::TryFrom;
 
 /// SEPARATOR is the separator character used in the download piece request, separating the task ID
 /// and piece number. It is a hyphen character '-'.
@@ -72,9 +73,13 @@ impl DownloadPiece {
     pub fn is_empty(&self) -> bool {
         self.task_id.is_empty()
     }
+}
 
-    /// from_bytes creates a download piece request from a byte slice.
-    pub fn from_bytes(bytes: Bytes) -> Result<Self> {
+/// Implement TryFrom<Bytes> for DownloadPiece.
+impl TryFrom<Bytes> for DownloadPiece {
+    type Error = Error;
+
+    fn try_from(bytes: Bytes) -> Result<Self> {
         let mut parts = bytes.splitn(2, |&b| b == SEPARATOR);
         let task_id = std::str::from_utf8(
             parts
@@ -96,13 +101,15 @@ impl DownloadPiece {
             piece_number,
         })
     }
+}
 
-    /// to_bytes converts the download piece request to a byte slice.
-    pub fn to_bytes(&self) -> Bytes {
+/// Implement From<DownloadPiece> for Bytes.
+impl From<DownloadPiece> for Bytes {
+    fn from(piece: DownloadPiece) -> Self {
         let mut bytes = BytesMut::with_capacity(DOWNLOAD_PIECE_SIZE);
-        bytes.extend_from_slice(self.task_id.as_bytes());
+        bytes.extend_from_slice(piece.task_id.as_bytes());
         bytes.put_u8(SEPARATOR);
-        bytes.extend_from_slice(self.piece_number.to_string().as_bytes());
+        bytes.extend_from_slice(piece.piece_number.to_string().as_bytes());
         bytes.freeze()
     }
 }
@@ -133,30 +140,39 @@ mod tests {
     }
 
     #[test]
-    fn test_to_bytes_and_from_bytes() {
+    fn test_valid_conversion() {
         let task_id = "a".repeat(32);
         let piece_number = 42;
         let download_piece = DownloadPiece::new(task_id.clone(), piece_number);
 
-        let bytes = download_piece.to_bytes();
-        let download_piece_decoded = DownloadPiece::from_bytes(bytes).unwrap();
+        // Test From<DownloadPiece> for Bytes
+        let bytes: Bytes = download_piece.into();
+
+        // Test TryFrom<Bytes> for DownloadPiece
+        let download_piece_decoded = DownloadPiece::try_from(bytes).unwrap();
 
         assert_eq!(download_piece_decoded.task_id(), task_id);
         assert_eq!(download_piece_decoded.piece_number(), piece_number);
     }
 
     #[test]
-    fn test_from_bytes_invalid_input() {
-        // Test missing separator.
+    fn test_invalid_conversion() {
+        // Test missing separator
         let invalid_bytes = Bytes::from("invalid_input_without_separator");
-        assert!(DownloadPiece::from_bytes(invalid_bytes).is_err());
+        let result = DownloadPiece::try_from(invalid_bytes);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), Error::InvalidPacket(_)));
 
-        // Test missing piece number.
-        let invalid_bytes = Bytes::from(format!("{}-", "a".repeat(32)));
-        assert!(DownloadPiece::from_bytes(invalid_bytes).is_err());
+        // Test missing piece number
+        let invalid_bytes = Bytes::from("task_id-");
+        let result = DownloadPiece::try_from(invalid_bytes);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), Error::ParseIntError(_)));
 
-        // Test invalid piece number format.
-        let invalid_bytes = Bytes::from(format!("{}-invalid", "a".repeat(32)));
-        assert!(DownloadPiece::from_bytes(invalid_bytes).is_err());
+        // Test invalid piece number
+        let invalid_bytes = Bytes::from("task_id-invalid");
+        let result = DownloadPiece::try_from(invalid_bytes);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), Error::ParseIntError(_)));
     }
 }
