@@ -70,37 +70,13 @@ pub enum Vortex {
 impl Vortex {
     /// Creates a new Vortex packet.
     pub fn new(tag: tlv::Tag, value: Bytes) -> Result<Self> {
-        // Check value length
-        if value.len() > MAX_VALUE_SIZE {
-            return Err(Error::InvalidLength(format!(
-                "value length {} exceeds maximum size {}",
-                value.len(),
-                MAX_VALUE_SIZE
-            )));
-        }
-
-        let mut rng: ThreadRng = thread_rng();
+        let mut rng = thread_rng();
         let header = Header {
             packet_id: rng.gen(),
             tag,
             length: value.len(),
         };
-
-        match tag {
-            tlv::Tag::DownloadPiece => {
-                let download_piece = tlv::download_piece::DownloadPiece::try_from(value)?;
-                Ok(Vortex::DownloadPiece(header, download_piece))
-            }
-            tlv::Tag::PieceContent => {
-                let piece_content = tlv::piece_content::PieceContent::try_from(value)?;
-                Ok(Vortex::PieceContent(header, piece_content))
-            }
-            tlv::Tag::Reserved(_) => Ok(Vortex::Reserved(header)),
-            tlv::Tag::Error => {
-                let err = tlv::error::Error::try_from(value)?;
-                Ok(Vortex::Error(header, err))
-            }
-        }
+        (tag, header, value).try_into()
     }
 
     /// packet_id returns the packet identifier of the Vortex packet.
@@ -147,7 +123,7 @@ impl Vortex {
 
         let mut bytes = BytesMut::from(bytes);
         let header = bytes.split_to(HEADER_SIZE);
-        let value = bytes;
+        let value = bytes.freeze();
         let packet_id = header[0];
         let tag = header[1]
             .try_into()
@@ -163,35 +139,16 @@ impl Vortex {
             )));
         }
 
-        // Check if the value length exceeds the maximum size.
-        if length > MAX_VALUE_SIZE {
-            return Err(Error::InvalidLength(format!(
-                "value length {} exceeds maximum size {}",
-                length, MAX_VALUE_SIZE
-            )));
-        }
-
-        let header = Header {
-            packet_id,
+        (
             tag,
-            length,
-        };
-
-        match tag {
-            tlv::Tag::DownloadPiece => {
-                let download_piece = tlv::download_piece::DownloadPiece::try_from(value.freeze())?;
-                Ok(Vortex::DownloadPiece(header, download_piece))
-            }
-            tlv::Tag::PieceContent => {
-                let piece_content = tlv::piece_content::PieceContent::try_from(value.freeze())?;
-                Ok(Vortex::PieceContent(header, piece_content))
-            }
-            tlv::Tag::Reserved(_) => Ok(Vortex::Reserved(header)),
-            tlv::Tag::Error => {
-                let error = tlv::error::Error::try_from(value.freeze())?;
-                Ok(Vortex::Error(header, error))
-            }
-        }
+            Header {
+                packet_id,
+                tag,
+                length,
+            },
+            value,
+        )
+            .try_into()
     }
 
     /// to_bytes converts the Vortex packet to a byte slice.
@@ -213,6 +170,27 @@ impl Vortex {
         bytes.put_u32(value.len() as u32);
         bytes.extend_from_slice(&value);
         bytes.freeze()
+    }
+}
+
+impl TryFrom<(tlv::Tag, Header, Bytes)> for Vortex {
+    type Error = Error;
+    fn try_from((tag, header, value): (tlv::Tag, Header, Bytes)) -> Result<Self> {
+        match tag {
+            tlv::Tag::DownloadPiece => {
+                let download_piece = tlv::download_piece::DownloadPiece::try_from(value)?;
+                Ok(Vortex::DownloadPiece(header, download_piece))
+            }
+            tlv::Tag::PieceContent => {
+                let piece_content = tlv::piece_content::PieceContent::try_from(value)?;
+                Ok(Vortex::PieceContent(header, piece_content))
+            }
+            tlv::Tag::Reserved(_) => Ok(Vortex::Reserved(header)),
+            tlv::Tag::Error => {
+                let err = tlv::error::Error::try_from(value)?;
+                Ok(Vortex::Error(header, err))
+            }
+        }
     }
 }
 
