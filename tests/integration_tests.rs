@@ -2,9 +2,10 @@ use bytes::{BufMut, BytesMut};
 use std::sync::{Arc, Mutex};
 use vortex::error::Error;
 use vortex::tlv::Tag;
-use vortex::Vortex as Packet;
+use vortex::Vortex;
 
-/// Mock peer for testing
+/// Mock peer for testing.
+#[derive(Debug, Default)]
 pub struct MockPeer {
     pieces: Arc<Mutex<Vec<Vec<u8>>>>,
 }
@@ -20,7 +21,7 @@ impl MockPeer {
         self.pieces.lock().unwrap().push(piece);
     }
 
-    pub fn handle_packet(&self, packet: &Packet) -> Result<Packet, Error> {
+    pub fn handle_packet(&self, packet: &Vortex) -> Result<Vortex, Error> {
         match packet.tag() {
             Tag::DownloadPiece => {
                 let value = String::from_utf8(packet.to_bytes()[6..].to_vec())?;
@@ -40,7 +41,7 @@ impl MockPeer {
                     )));
                 }
 
-                Ok(Packet::new(
+                Ok(Vortex::new(
                     Tag::PieceContent,
                     pieces[piece_id].clone().into(),
                 )?)
@@ -50,30 +51,24 @@ impl MockPeer {
     }
 }
 
-impl Default for MockPeer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[test]
 fn test_piece_download_flow() {
     let peer = MockPeer::new();
     let piece = vec![1, 2, 3, 4];
     peer.add_piece(piece.clone());
 
-    // Create a download request for piece 0
+    // Create a download request for piece 0.
     let task_id = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-    let request = Packet::new(
+    let request = Vortex::new(
         Tag::DownloadPiece,
         format!("{}-0", task_id).into_bytes().into(),
     )
     .unwrap();
 
-    // Handle the request
+    // Handle the request.
     let response = peer.handle_packet(&request).unwrap();
 
-    // Verify the response
+    // Verify the response.
     assert_eq!(response.tag(), &Tag::PieceContent);
     assert_eq!(&response.to_bytes()[6..], &piece);
 }
@@ -83,8 +78,8 @@ fn test_error_propagation() {
     let peer = MockPeer::new();
     let task_id = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
 
-    // Test with missing piece
-    let request = Packet::new(
+    // Test with missing piece.
+    let request = Vortex::new(
         Tag::DownloadPiece,
         format!("{}-42", task_id).into_bytes().into(),
     )
@@ -92,34 +87,34 @@ fn test_error_propagation() {
     let result = peer.handle_packet(&request);
     assert!(matches!(result, Err(Error::InvalidPacket(_))));
 
-    // Test with unexpected tag
-    let request = Packet::new(Tag::PieceContent, vec![1, 2, 3, 4].into()).unwrap();
+    // Test with unexpected tag.
+    let request = Vortex::new(Tag::PieceContent, vec![1, 2, 3, 4].into()).unwrap();
     let result = peer.handle_packet(&request);
     assert!(matches!(result, Err(Error::InvalidPacket(_))));
 }
 
 #[test]
 fn test_invalid_length() {
-    // Create a packet with invalid length in the header
+    // Create a packet with invalid length in the header.
     let mut packet_bytes = BytesMut::with_capacity(6);
     packet_bytes.put_u8(42); // packet_id
     packet_bytes.put_u8(Tag::PieceContent.into()); // tag
     packet_bytes.put_u32(u32::MAX); // length (too large)
 
-    // Attempt to parse the packet with invalid length
-    let result = Packet::from_bytes(packet_bytes.freeze());
+    // Attempt to parse the packet with invalid length.
+    let result = Vortex::from_bytes(packet_bytes.freeze());
     assert!(matches!(result, Err(Error::InvalidLength(_))));
 }
 
 #[test]
 fn test_invalid_format() {
-    // Test with invalid format (missing separator)
+    // Test with invalid format (missing separator).
     let task_id = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-    let result = Packet::new(Tag::DownloadPiece, task_id.as_bytes().to_vec().into());
+    let result = Vortex::new(Tag::DownloadPiece, task_id.as_bytes().to_vec().into());
     assert!(matches!(result, Err(Error::InvalidPacket(_))));
 
-    // Test with invalid piece ID format
-    let result = Packet::new(
+    // Test with invalid piece ID format.
+    let result = Vortex::new(
         Tag::DownloadPiece,
         format!("{}-abc", task_id).into_bytes().into(),
     );

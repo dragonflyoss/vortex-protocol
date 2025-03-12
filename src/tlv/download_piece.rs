@@ -75,10 +75,11 @@ impl DownloadPiece {
     }
 }
 
-/// Implement TryFrom<Bytes> for DownloadPiece.
+/// Implement TryFrom<Bytes> for DownloadPiece for conversion from a byte slice.
 impl TryFrom<Bytes> for DownloadPiece {
     type Error = Error;
 
+    /// try_from decodes the download piece request from the byte slice.
     fn try_from(bytes: Bytes) -> Result<Self> {
         let mut parts = bytes.splitn(2, |&b| b == SEPARATOR);
         let task_id = std::str::from_utf8(
@@ -103,8 +104,9 @@ impl TryFrom<Bytes> for DownloadPiece {
     }
 }
 
-/// Implement From<DownloadPiece> for Bytes.
+/// Implement From<DownloadPiece> for Bytes for conversion to a byte slice.
 impl From<DownloadPiece> for Bytes {
+    /// from converts the download piece request to a byte slice.
     fn from(piece: DownloadPiece) -> Self {
         let mut bytes = BytesMut::with_capacity(DOWNLOAD_PIECE_SIZE);
         bytes.extend_from_slice(piece.task_id.as_bytes());
@@ -145,31 +147,28 @@ mod tests {
         let piece_number = 42;
         let download_piece = DownloadPiece::new(task_id.clone(), piece_number);
 
-        // Test From<DownloadPiece> for Bytes
         let bytes: Bytes = download_piece.into();
+        let download_piece = DownloadPiece::try_from(bytes).unwrap();
 
-        // Test TryFrom<Bytes> for DownloadPiece
-        let download_piece_decoded = DownloadPiece::try_from(bytes).unwrap();
-
-        assert_eq!(download_piece_decoded.task_id(), task_id);
-        assert_eq!(download_piece_decoded.piece_number(), piece_number);
+        assert_eq!(download_piece.task_id(), task_id);
+        assert_eq!(download_piece.piece_number(), piece_number);
     }
 
     #[test]
     fn test_invalid_conversion() {
-        // Test missing separator
+        // Test missing separator.
         let invalid_bytes = Bytes::from("invalid_input_without_separator");
         let result = DownloadPiece::try_from(invalid_bytes);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), Error::InvalidPacket(_)));
 
-        // Test missing piece number
+        // Test missing piece number.
         let invalid_bytes = Bytes::from("task_id-");
         let result = DownloadPiece::try_from(invalid_bytes);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), Error::ParseIntError(_)));
 
-        // Test invalid piece number
+        // Test invalid piece number.
         let invalid_bytes = Bytes::from("task_id-invalid");
         let result = DownloadPiece::try_from(invalid_bytes);
         assert!(result.is_err());
