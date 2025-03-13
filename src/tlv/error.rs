@@ -118,8 +118,9 @@ impl Error {
     }
 }
 
+/// Implement From<Error> for Bytes.
 impl From<Error> for Bytes {
-    // Converts a Error request to a byte slice.
+    /// from converts the error request to a byte slice.
     fn from(err: Error) -> Self {
         let mut bytes = BytesMut::with_capacity(err.len());
         bytes.put_u8(err.code.into());
@@ -129,9 +130,11 @@ impl From<Error> for Bytes {
     }
 }
 
+/// Implement TryFrom<Bytes> for Error.
 impl TryFrom<Bytes> for Error {
     type Error = VortexError;
 
+    /// try_from decodes the error request from the byte slice.
     fn try_from(bytes: Bytes) -> VortexResult<Self> {
         let mut parts = bytes.splitn(2, |&b| b == SEPARATOR);
 
@@ -194,23 +197,23 @@ mod tests {
         let error = Error::new(code, message.clone());
 
         let bytes: Bytes = error.into();
-        let error_decoded = Error::try_from(bytes).unwrap();
+        let error = Error::try_from(bytes).unwrap();
 
-        assert_eq!(error_decoded.code(), code);
-        assert_eq!(error_decoded.message(), message);
+        assert_eq!(error.code(), code);
+        assert_eq!(error.message(), message);
     }
 
     #[test]
     fn test_from_bytes_invalid_input() {
-        // Test missing separator
+        // Test missing separator.
         let invalid_bytes = Bytes::from("invalid_input_without_separator");
         assert!(Error::try_from(invalid_bytes).is_err());
 
-        // Test missing error message
+        // Test missing error message.
         let invalid_bytes = Bytes::from(format!("{}:", 1));
         assert!(Error::try_from(invalid_bytes).is_err());
 
-        // Test invalid error code format
+        // Test invalid error code format.
         let invalid_bytes = Bytes::from(format!("{}:{}", 256, "Invalid code"));
         assert!(Error::try_from(invalid_bytes).is_err());
     }

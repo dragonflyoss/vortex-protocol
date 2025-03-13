@@ -76,6 +76,7 @@ impl Vortex {
             tag,
             length: value.len(),
         };
+
         (tag, header, value).try_into()
     }
 
@@ -173,8 +174,11 @@ impl Vortex {
     }
 }
 
+/// Implement TryFrom<(tlv::Tag, Header, Bytes)> for Vortex.
 impl TryFrom<(tlv::Tag, Header, Bytes)> for Vortex {
     type Error = Error;
+
+    /// try_from converts a tuple of Tag, Header, and Bytes into a Vortex packet.
     fn try_from((tag, header, value): (tlv::Tag, Header, Bytes)) -> Result<Self> {
         match tag {
             tlv::Tag::DownloadPiece => {
@@ -216,6 +220,7 @@ mod tests {
         let value = b"piece content";
         let packet = Vortex::new(Tag::PieceContent, Bytes::from_static(value))
             .expect("Failed to create packet");
+
         assert_eq!(packet.tag(), &Tag::PieceContent);
         assert_eq!(packet.length(), value.len());
     }
@@ -227,6 +232,7 @@ mod tests {
             .expect("Failed to create packet");
         let bytes = packet.to_bytes();
         let deserialized = Vortex::from_bytes(bytes).expect("Failed to deserialize packet");
+
         assert_eq!(packet.tag(), deserialized.tag());
         assert_eq!(packet.length(), deserialized.length());
     }
@@ -237,14 +243,15 @@ mod tests {
         let packet = Vortex::new(Tag::PieceContent, Bytes::from_static(value))
             .expect("Failed to create packet");
         let bytes = packet.to_bytes();
+
         assert_eq!(bytes.len(), HEADER_SIZE + value.len());
     }
 
     #[test]
     fn test_error_handling() {
-        // Test invalid length
         let value = vec![0; MAX_VALUE_SIZE + 1];
         let result = Vortex::new(Tag::PieceContent, value.into());
+
         assert!(matches!(result, Err(Error::InvalidLength(_))));
     }
 }
