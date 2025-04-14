@@ -38,7 +38,7 @@ pub enum Code {
     Internal = 3,
 
     /// Reserved for future use.
-    Reserved(u8), // For tags 4-254
+    Reserved(u8), // For tags 4-253
 }
 
 /// Implement TryFrom<u8> for Code.
