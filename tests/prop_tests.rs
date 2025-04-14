@@ -17,6 +17,10 @@ fn generate_value_bytes(tag: Tag) -> Bytes {
             // PieceContent can be any bytes.
             vec![1, 2, 3, 4].into()
         }
+        Tag::Close => {
+            // Close tag can be empty.
+            vec![].into()
+        }
         Tag::Error => {
             // Error format is "code:message".
             format!("{}:test error", 1u8).into_bytes().into()
@@ -33,6 +37,7 @@ fn arb_packet() -> impl Strategy<Value = Vortex> {
     let arb_tag = prop_oneof![
         Just(Tag::DownloadPiece),
         Just(Tag::PieceContent),
+        Just(Tag::Close),
         Just(Tag::Error)
     ];
 
@@ -87,7 +92,7 @@ fn test_packet_value_constraints() {
         prop_assert!(bytes.len() >= 6);
         prop_assert!(matches!(
             packet.tag(),
-            &Tag::DownloadPiece | &Tag::PieceContent | &Tag::Error
+            &Tag::DownloadPiece | &Tag::PieceContent | &Tag::Error | &Tag::Close
         ));
         Ok(())
     });

@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+pub mod close;
 pub mod download_piece;
 pub mod error;
 pub mod piece_content;
@@ -32,6 +33,9 @@ pub enum Tag {
     /// Reserved for future use, for tags 2-254.
     Reserved(u8),
 
+    /// Close the connection. If server or client receives this tag, it will close the connection.
+    Close = 254,
+
     /// Error message.
     Error = 255,
 }
@@ -45,7 +49,8 @@ impl TryFrom<u8> for Tag {
         match value {
             0 => Ok(Tag::DownloadPiece),
             1 => Ok(Tag::PieceContent),
-            2..=254 => Ok(Tag::Reserved(value)),
+            2..=253 => Ok(Tag::Reserved(value)),
+            254 => Ok(Tag::Close),
             255 => Ok(Tag::Error),
         }
     }
@@ -59,6 +64,7 @@ impl From<Tag> for u8 {
             Tag::DownloadPiece => 0,
             Tag::PieceContent => 1,
             Tag::Reserved(value) => value,
+            Tag::Close => 254,
             Tag::Error => 255,
         }
     }
@@ -73,7 +79,8 @@ mod tests {
         assert_eq!(Tag::try_from(0), Ok(Tag::DownloadPiece));
         assert_eq!(Tag::try_from(1), Ok(Tag::PieceContent));
         assert_eq!(Tag::try_from(2), Ok(Tag::Reserved(2)));
-        assert_eq!(Tag::try_from(254), Ok(Tag::Reserved(254)));
+        assert_eq!(Tag::try_from(253), Ok(Tag::Reserved(253)));
+        assert_eq!(Tag::try_from(254), Ok(Tag::Close));
         assert_eq!(Tag::try_from(255), Ok(Tag::Error));
     }
 
@@ -82,7 +89,8 @@ mod tests {
         assert_eq!(u8::from(Tag::DownloadPiece), 0);
         assert_eq!(u8::from(Tag::PieceContent), 1);
         assert_eq!(u8::from(Tag::Reserved(2)), 2);
-        assert_eq!(u8::from(Tag::Reserved(254)), 254);
+        assert_eq!(u8::from(Tag::Reserved(253)), 253);
+        assert_eq!(u8::from(Tag::Close), 254);
         assert_eq!(u8::from(Tag::Error), 255);
     }
 }
