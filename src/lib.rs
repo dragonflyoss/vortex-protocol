@@ -63,6 +63,7 @@ pub enum Vortex {
     DownloadPiece(Header, tlv::download_piece::DownloadPiece),
     PieceContent(Header, tlv::piece_content::PieceContent),
     Reserved(Header),
+    Close(Header),
     Error(Header, tlv::error::Error),
 }
 
@@ -87,6 +88,7 @@ impl Vortex {
             Vortex::DownloadPiece(header, _) => header.packet_id,
             Vortex::PieceContent(header, _) => header.packet_id,
             Vortex::Reserved(header) => header.packet_id,
+            Vortex::Close(header) => header.packet_id,
             Vortex::Error(header, _) => header.packet_id,
         }
     }
@@ -98,6 +100,7 @@ impl Vortex {
             Vortex::DownloadPiece(header, _) => &header.tag,
             Vortex::PieceContent(header, _) => &header.tag,
             Vortex::Reserved(header) => &header.tag,
+            Vortex::Close(header) => &header.tag,
             Vortex::Error(header, _) => &header.tag,
         }
     }
@@ -109,6 +112,7 @@ impl Vortex {
             Vortex::DownloadPiece(header, _) => header.length,
             Vortex::PieceContent(header, _) => header.length,
             Vortex::Reserved(header) => header.length,
+            Vortex::Close(header) => header.length,
             Vortex::Error(header, _) => header.length,
         }
     }
@@ -162,6 +166,7 @@ impl Vortex {
                 (header, Into::<Bytes>::into(piece_content.clone()))
             }
             Vortex::Reserved(header) => (header, Bytes::new()),
+            Vortex::Close(header) => (header, Bytes::new()),
             Vortex::Error(header, err) => (header, Into::<Bytes>::into(err.clone())),
         };
 
@@ -190,6 +195,7 @@ impl TryFrom<(tlv::Tag, Header, Bytes)> for Vortex {
                 Ok(Vortex::PieceContent(header, piece_content))
             }
             tlv::Tag::Reserved(_) => Ok(Vortex::Reserved(header)),
+            tlv::Tag::Close => Ok(Vortex::Close(header)),
             tlv::Tag::Error => {
                 let err = tlv::error::Error::try_from(value)?;
                 Ok(Vortex::Error(header, err))
@@ -245,6 +251,16 @@ mod tests {
         let bytes = packet.to_bytes();
 
         assert_eq!(bytes.len(), HEADER_SIZE + value.len());
+    }
+
+    #[test]
+    fn test_close() {
+        let tag = Tag::Close;
+        let value = Bytes::new();
+        let packet = Vortex::new(tag, value.clone()).expect("Failed to create Vortex packet");
+
+        assert_eq!(packet.tag(), &tag);
+        assert_eq!(packet.length(), value.len());
     }
 
     #[test]
