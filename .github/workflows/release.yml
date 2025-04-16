@@ -6,20 +6,6 @@ on:
       - v*
 
 jobs:
-  release-github:
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    needs: [build]
-    permissions:
-      contents: write
-    steps:
-      - name: Release
-        uses: ncipollo/release-action@v1
-        with:
-          generateReleaseNotes: true
-          allowUpdates: true
-          draft: true
-
   publish-crates:
     runs-on: ubuntu-latest
     timeout-minutes: 360
