@@ -16,8 +16,8 @@
 
 use bytes::Bytes;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use vortex::tlv::Tag;
-use vortex::Vortex;
+use vortex_protocol::tlv::Tag;
+use vortex_protocol::Vortex;
 
 fn vortex_packet_creation(c: &mut Criterion) {
     let mut group = c.benchmark_group("Vortex Packet Creation");

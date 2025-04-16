@@ -1,8 +1,8 @@
 use bytes::Bytes;
 use proptest::prelude::*;
 use proptest::test_runner::TestRunner;
-use vortex::tlv::Tag;
-use vortex::Vortex;
+use vortex_protocol::tlv::Tag;
+use vortex_protocol::Vortex;
 
 /// Generate valid value bytes based on tag.
 fn generate_value_bytes(tag: Tag) -> Bytes {

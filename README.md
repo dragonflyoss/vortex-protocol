@@ -1,11 +1,11 @@
-# Vortex
+# Vortex Protocol
 
-[![LICENSE](https://img.shields.io/github/license/dragonflyoss/vortex.svg?style=flat-square)](https://github.com/dragonflyoss/vortex/blob/main/LICENSE)
-[![Discussions](https://img.shields.io/badge/discussions-on%20github-blue?style=flat-square)](https://github.com/dragonflyoss/vortex/discussions)
+[![LICENSE](https://img.shields.io/github/license/dragonflyoss/vortex-protocol.svg?style=flat-square)](https://github.com/dragonflyoss/vortex-protocol/blob/main/LICENSE)
+[![Discussions](https://img.shields.io/badge/discussions-on%20github-blue?style=flat-square)](https://github.com/dragonflyoss/vortex-protocol/discussions)
 
 ## Introduction
 
-Vortex is a high-performance peer-to-peer (P2P) file transfer protocol implementation in Rust,
+Vortex protocol is a high-performance peer-to-peer (P2P) file transfer protocol implementation in Rust,
 designed as part of the Dragonfly project. It utilizes the TLV (Tag-Length-Value) format for
 efficient and flexible data transmission, making it ideal for large-scale file distribution scenarios.
 
@@ -23,7 +23,7 @@ For details, please see [the specification](docs/README.md).
 
 ## Benchmarking
 
-Vortex includes comprehensive benchmarks for packet creation, serialization, and deserialization:
+Vortex protocol includes comprehensive benchmarks for packet creation, serialization, and deserialization:
 
 ```bash
 # Run all benchmarks

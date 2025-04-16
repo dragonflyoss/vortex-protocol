@@ -1,6 +1,6 @@
-# Vortex
+# Vortex Protocol
 
-Vortex is a peer-to-peer (P2P) file transfer protocol that utilizes the TLV (Tag-Length-Value) format
+Vortex protocol is a peer-to-peer (P2P) file transfer protocol that utilizes the TLV (Tag-Length-Value) format
 for efficient and flexible data transmission. This protocol is designed to provide reliable and
 scalable file sharing capabilities.
 

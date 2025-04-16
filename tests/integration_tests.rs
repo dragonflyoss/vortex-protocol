@@ -1,8 +1,8 @@
 use bytes::{BufMut, BytesMut};
 use std::sync::{Arc, Mutex};
-use vortex::error::Error;
-use vortex::tlv::Tag;
-use vortex::Vortex;
+use vortex_protocol::error::Error;
+use vortex_protocol::tlv::Tag;
+use vortex_protocol::Vortex;
 
 /// Mock peer for testing.
 #[derive(Debug, Default)]
