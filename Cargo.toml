@@ -17,7 +17,7 @@ bytes = "1"
 
 [dev-dependencies]
 criterion = "0.5"
-proptest = "1.4"
+proptest = "1.7"
 
 [[bench]]
 name = "vortex"
