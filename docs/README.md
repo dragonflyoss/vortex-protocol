@@ -9,7 +9,7 @@ scalable file sharing capabilities.
 - **Packet Identifier (8 bits):** Uniquely identifies each packet.
 - **Tag (T, 8 bits):** Specifies the type of data in the value field.
 - **Length (L, 32 bits):** Indicates the length (in bytes) of the Value field, supporting up to 4GiB of data.
-- **Value (V, variable length):** The actual data, up to 1GiB.
+- **Value (V, variable length):** The actual data, up to 4GiB.
 
 ## Tag Definitions
 
