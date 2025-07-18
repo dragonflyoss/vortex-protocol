@@ -62,6 +62,7 @@ pub struct Header {
 pub enum Vortex {
     DownloadPiece(Header, tlv::download_piece::DownloadPiece),
     PieceContent(Header, tlv::piece_content::PieceContent),
+    DownloadPersistentCachePiece(Header, tlv::download_piece::DownloadPiece),
     Reserved(Header),
     Close(Header),
     Error(Header, tlv::error::Error),
@@ -87,6 +88,7 @@ impl Vortex {
         match self {
             Vortex::DownloadPiece(header, _) => header.packet_id,
             Vortex::PieceContent(header, _) => header.packet_id,
+            Vortex::DownloadPersistentCachePiece(header, _) => header.packet_id,
             Vortex::Reserved(header) => header.packet_id,
             Vortex::Close(header) => header.packet_id,
             Vortex::Error(header, _) => header.packet_id,
@@ -99,6 +101,7 @@ impl Vortex {
         match self {
             Vortex::DownloadPiece(header, _) => &header.tag,
             Vortex::PieceContent(header, _) => &header.tag,
+            Vortex::DownloadPersistentCachePiece(header, _) => &header.tag,
             Vortex::Reserved(header) => &header.tag,
             Vortex::Close(header) => &header.tag,
             Vortex::Error(header, _) => &header.tag,
@@ -111,6 +114,7 @@ impl Vortex {
         match self {
             Vortex::DownloadPiece(header, _) => header.length,
             Vortex::PieceContent(header, _) => header.length,
+            Vortex::DownloadPersistentCachePiece(header, _) => header.length,
             Vortex::Reserved(header) => header.length,
             Vortex::Close(header) => header.length,
             Vortex::Error(header, _) => header.length,
@@ -165,6 +169,9 @@ impl Vortex {
             Vortex::PieceContent(header, piece_content) => {
                 (header, Into::<Bytes>::into(piece_content.clone()))
             }
+            Vortex::DownloadPersistentCachePiece(header, download_piece) => {
+                (header, Into::<Bytes>::into(download_piece.clone()))
+            }
             Vortex::Reserved(header) => (header, Bytes::new()),
             Vortex::Close(header) => (header, Bytes::new()),
             Vortex::Error(header, err) => (header, Into::<Bytes>::into(err.clone())),
@@ -193,6 +200,10 @@ impl TryFrom<(tlv::Tag, Header, Bytes)> for Vortex {
             tlv::Tag::PieceContent => {
                 let piece_content = tlv::piece_content::PieceContent::try_from(value)?;
                 Ok(Vortex::PieceContent(header, piece_content))
+            }
+            tlv::Tag::DownloadPersistentCachePiece => {
+                let download_piece = tlv::download_piece::DownloadPiece::try_from(value)?;
+                Ok(Vortex::DownloadPersistentCachePiece(header, download_piece))
             }
             tlv::Tag::Reserved(_) => Ok(Vortex::Reserved(header)),
             tlv::Tag::Close => Ok(Vortex::Close(header)),
@@ -228,6 +239,17 @@ mod tests {
             .expect("Failed to create packet");
 
         assert_eq!(packet.tag(), &Tag::PieceContent);
+        assert_eq!(packet.length(), value.len());
+    }
+
+    #[test]
+    fn test_new_download_persistent_cache_piece() {
+        let tag = Tag::DownloadPersistentCachePiece;
+        let value = Bytes::from("a".repeat(32) + "-42");
+        let packet = Vortex::new(tag, value.clone()).expect("Failed to create Vortex packet");
+
+        assert_eq!(packet.packet_id(), packet.packet_id());
+        assert_eq!(packet.tag(), &tag);
         assert_eq!(packet.length(), value.len());
     }
 
