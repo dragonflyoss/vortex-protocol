@@ -23,7 +23,7 @@ pub mod tlv;
 
 /// HEADER_SIZE is the size of the Vortex packet header including the packet identifier, tag, and
 /// length.
-const HEADER_SIZE: usize = 6;
+pub const HEADER_SIZE: usize = 6;
 
 /// MAX_VALUE_SIZE is the maximum size of the value field (4 GiB).
 const MAX_VALUE_SIZE: usize = 4 * 1024 * 1024 * 1024;
