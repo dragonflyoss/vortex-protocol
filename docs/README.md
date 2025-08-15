@@ -19,6 +19,7 @@ scalable file sharing capabilities.
 | ----- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0     | Download Piece | Download the content of a piece from a peer. It is composed of `{Task ID}-{Piece ID}`, where the Task ID is a 32-byte SHA-256 value and the Piece ID is a number. |
 | 1     | Piece Content  | The content of a piece, with a maximum size of 1 GiB per piece.                                                                                                   |
+| 0     | Download Persistent Cache Piece | Download the content of a persistent cache piece from a peer. It is composed of `{Task ID}-{Piece ID}`, where the Task ID is a 32-byte SHA-256 value and the Persistent Cache Piece ID is a number. |
 | 2-253 | Reserved       | Reserved for future use.                                                                                                                                          |
 | 254   | Close          | Close connection.                                                                                                                                                 |
 | 255   | Error          | Error message.                                                                                                                                                    |
@@ -40,6 +41,7 @@ scalable file sharing capabilities.
 
 - **Download Piece (Tag=0x00):** Download the content of a piece from a peer.
 - **Piece Content (Tag=0x01):** Raw piece data or piece fragments.
+- **Download Persistent Cache Piece (Tag=0x02):** Download the content of a persistent cache piece from a peer.
 - **Error (Tag=0xFF):** Conveys error.
 - **Close (Tag=0xFE):** Indicates the end of a connection.
 - **Reserved Tags:** Tags 2-253 may be allocated for metadata, compression, encryption, or future protocol extensions.
