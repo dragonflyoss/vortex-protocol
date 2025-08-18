@@ -73,7 +73,7 @@ fn vortex_packet_serialization(c: &mut Criterion) {
         let value = Bytes::from("a".repeat(32));
         let packet = Vortex::new(tag, value).unwrap();
         b.iter(|| {
-            black_box(packet.to_bytes());
+            black_box(Bytes::from(packet.clone()));
         });
     });
 
@@ -82,7 +82,7 @@ fn vortex_packet_serialization(c: &mut Criterion) {
         let value = Bytes::from("a".repeat(1024));
         let packet = Vortex::new(tag, value).unwrap();
         b.iter(|| {
-            black_box(packet.to_bytes());
+            black_box(Bytes::from(packet.clone()));
         });
     });
 
@@ -91,7 +91,7 @@ fn vortex_packet_serialization(c: &mut Criterion) {
         let value = Bytes::from("a".repeat(1024 * 1024));
         let packet = Vortex::new(tag, value).unwrap();
         b.iter(|| {
-            black_box(packet.to_bytes());
+            black_box(Bytes::from(packet.clone()));
         });
     });
 
@@ -100,7 +100,7 @@ fn vortex_packet_serialization(c: &mut Criterion) {
         let value = Bytes::from("a".repeat(16 * 1024 * 1024));
         let packet = Vortex::new(tag, value).unwrap();
         b.iter(|| {
-            black_box(packet.to_bytes());
+            black_box(Bytes::from(packet.clone()));
         });
     });
 
@@ -109,7 +109,7 @@ fn vortex_packet_serialization(c: &mut Criterion) {
         let value = Bytes::from("a".repeat(128 * 1024 * 1024));
         let packet = Vortex::new(tag, value).unwrap();
         b.iter(|| {
-            black_box(packet.to_bytes());
+            black_box(Bytes::from(packet.clone()));
         });
     });
 
@@ -123,9 +123,9 @@ fn vortex_packet_deserialization(c: &mut Criterion) {
         let tag = Tag::PieceContent;
         let value = Bytes::from("a".repeat(32));
         let packet = Vortex::new(tag, value).unwrap();
-        let bytes = packet.to_bytes();
+        let bytes: Bytes = packet.into();
         b.iter(|| {
-            black_box(Vortex::from_bytes(bytes.clone())).unwrap();
+            black_box(Vortex::try_from(bytes.clone()).unwrap());
         });
     });
 
@@ -133,9 +133,9 @@ fn vortex_packet_deserialization(c: &mut Criterion) {
         let tag = Tag::PieceContent;
         let value = Bytes::from("a".repeat(1024));
         let packet = Vortex::new(tag, value).unwrap();
-        let bytes = packet.to_bytes();
+        let bytes: Bytes = packet.into();
         b.iter(|| {
-            black_box(Vortex::from_bytes(bytes.clone())).unwrap();
+            black_box(Vortex::try_from(bytes.clone()).unwrap());
         });
     });
 
@@ -143,9 +143,9 @@ fn vortex_packet_deserialization(c: &mut Criterion) {
         let tag = Tag::PieceContent;
         let value = Bytes::from("a".repeat(1024 * 1024));
         let packet = Vortex::new(tag, value).unwrap();
-        let bytes = packet.to_bytes();
+        let bytes: Bytes = packet.into();
         b.iter(|| {
-            black_box(Vortex::from_bytes(bytes.clone())).unwrap();
+            black_box(Vortex::try_from(bytes.clone()).unwrap());
         });
     });
 
@@ -153,9 +153,9 @@ fn vortex_packet_deserialization(c: &mut Criterion) {
         let tag = Tag::PieceContent;
         let value = Bytes::from("a".repeat(16 * 1024 * 1024));
         let packet = Vortex::new(tag, value).unwrap();
-        let bytes = packet.to_bytes();
+        let bytes: Bytes = packet.into();
         b.iter(|| {
-            black_box(Vortex::from_bytes(bytes.clone())).unwrap();
+            black_box(Vortex::try_from(bytes.clone()).unwrap());
         });
     });
 
@@ -163,9 +163,9 @@ fn vortex_packet_deserialization(c: &mut Criterion) {
         let tag = Tag::PieceContent;
         let value = Bytes::from("a".repeat(128 * 1024 * 1024));
         let packet = Vortex::new(tag, value).unwrap();
-        let bytes = packet.to_bytes();
+        let bytes: Bytes = packet.into();
         b.iter(|| {
-            black_box(Vortex::from_bytes(bytes.clone())).unwrap();
+            black_box(Vortex::try_from(bytes.clone()).unwrap());
         });
     });
 
