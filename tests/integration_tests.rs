@@ -1,4 +1,4 @@
-use bytes::{BufMut, BytesMut};
+use bytes::{BufMut, Bytes, BytesMut};
 use std::sync::{Arc, Mutex};
 use vortex_protocol::error::Error;
 use vortex_protocol::tlv::Tag;
@@ -21,10 +21,11 @@ impl MockPeer {
         self.pieces.lock().unwrap().push(piece);
     }
 
-    pub fn handle_packet(&self, packet: &Vortex) -> Result<Vortex, Error> {
+    pub fn handle_packet(&self, packet: Vortex) -> Result<Vortex, Error> {
         match packet.tag() {
             Tag::DownloadPiece => {
-                let value = String::from_utf8(packet.to_bytes()[6..].to_vec())?;
+                let bytes: Bytes = packet.into();
+                let value = String::from_utf8(bytes[6..].to_vec())?;
                 let parts: Vec<&str> = value.split('-').collect();
                 if parts.len() != 2 {
                     return Err(Error::InvalidPacket(
@@ -66,11 +67,13 @@ fn test_piece_download_flow() {
     .unwrap();
 
     // Handle the request.
-    let response = peer.handle_packet(&request).unwrap();
+    let response = peer.handle_packet(request).unwrap();
+    let tag = *response.tag();
+    let response_bytes: Bytes = response.into();
 
     // Verify the response.
-    assert_eq!(response.tag(), &Tag::PieceContent);
-    assert_eq!(&response.to_bytes()[6..], &piece);
+    assert_eq!(&tag, &Tag::PieceContent);
+    assert_eq!(&response_bytes[6..], &piece);
 }
 
 #[test]
@@ -84,12 +87,12 @@ fn test_error_propagation() {
         format!("{}-42", task_id).into_bytes().into(),
     )
     .unwrap();
-    let result = peer.handle_packet(&request);
+    let result = peer.handle_packet(request);
     assert!(matches!(result, Err(Error::InvalidPacket(_))));
 
     // Test with unexpected tag.
     let request = Vortex::new(Tag::PieceContent, vec![1, 2, 3, 4].into()).unwrap();
-    let result = peer.handle_packet(&request);
+    let result = peer.handle_packet(request);
     assert!(matches!(result, Err(Error::InvalidPacket(_))));
 }
 
@@ -97,12 +100,12 @@ fn test_error_propagation() {
 fn test_invalid_length() {
     // Create a packet with invalid length in the header.
     let mut packet_bytes = BytesMut::with_capacity(6);
-    packet_bytes.put_u8(42); // packet_id
+    packet_bytes.put_u8(42); // id
     packet_bytes.put_u8(Tag::PieceContent.into()); // tag
     packet_bytes.put_u32(u32::MAX); // length (too large)
 
     // Attempt to parse the packet with invalid length.
-    let result = Vortex::from_bytes(packet_bytes.freeze());
+    let result = Vortex::try_from(packet_bytes.freeze());
     assert!(matches!(result, Err(Error::InvalidLength(_))));
 }
 

@@ -72,12 +72,16 @@ where
 #[test]
 fn test_roundtrip_serialization() {
     run_test(|packet| {
-        let serialized = packet.to_bytes();
-        let deserialized = Vortex::from_bytes(serialized).expect("Failed to deserialize packet");
+        let id = packet.id();
+        let tag = *packet.tag();
+        let length = packet.length();
 
-        prop_assert_eq!(packet.packet_id(), deserialized.packet_id());
-        prop_assert_eq!(packet.tag(), deserialized.tag());
-        prop_assert_eq!(packet.length(), deserialized.length());
+        let serialized: Bytes = packet.into();
+        let deserialized: Vortex = serialized.try_into().expect("Failed to deserialize packet");
+
+        prop_assert_eq!(id, deserialized.id());
+        prop_assert_eq!(tag, *deserialized.tag());
+        prop_assert_eq!(length, deserialized.length());
         Ok(())
     });
 }
@@ -85,8 +89,10 @@ fn test_roundtrip_serialization() {
 #[test]
 fn test_packet_length() {
     run_test(|packet| {
-        let bytes = packet.to_bytes();
-        prop_assert_eq!(bytes.len(), packet.length() + 6); // header size is 6
+        let length = packet.length();
+
+        let bytes: Bytes = packet.into();
+        prop_assert_eq!(bytes.len(), length + 6); // header size is 6
         Ok(())
     });
 }
@@ -94,11 +100,13 @@ fn test_packet_length() {
 #[test]
 fn test_packet_value_constraints() {
     run_test(|packet| {
-        let bytes = packet.to_bytes();
+        let tag = *packet.tag();
+
+        let bytes: Bytes = packet.into();
         prop_assert!(bytes.len() >= 6);
         prop_assert!(matches!(
-            packet.tag(),
-            &Tag::DownloadPiece | &Tag::PieceContent | &Tag::Error | &Tag::Close
+            tag,
+            Tag::DownloadPiece | Tag::PieceContent | Tag::Error | Tag::Close
         ));
         Ok(())
     });

@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Rust cache 
         uses: Swatinem/rust-cache@v2
@@ -49,6 +49,6 @@ jobs:
           config: '.markdownlint.yml'
           args: '**/*.md'
 
-      - uses: crate-ci/typos@b1ae8d918b6e85bd611117d3d9a3be4f903ee5e4
+      - uses: crate-ci/typos@a67079b4ae32e18c3f53d75368c52ce53b5fb56b
         with:
           config: .typos.toml
