@@ -142,8 +142,22 @@ impl TryFrom<Bytes> for Error {
         }
 
         Ok(Error {
-            code: Code::try_from(bytes[0])?,
-            message: String::from_utf8(bytes[CODE_SIZE..].to_vec())?,
+            code: Code::try_from(
+                bytes
+                    .first()
+                    .ok_or(VortexError::InvalidPacket(
+                        "insufficient bytes for code".to_string(),
+                    ))?
+                    .to_owned(),
+            )?,
+            message: String::from_utf8(
+                bytes
+                    .get(CODE_SIZE..)
+                    .ok_or(VortexError::InvalidPacket(
+                        "insufficient bytes for message".to_string(),
+                    ))?
+                    .to_vec(),
+            )?,
         })
     }
 }

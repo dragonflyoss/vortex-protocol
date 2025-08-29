@@ -19,10 +19,10 @@ use bytes::{BufMut, Bytes, BytesMut};
 use std::convert::TryFrom;
 
 /// TASK_ID_SIZE is the size of the task ID in bytes.
-const TASK_ID_SIZE: usize = 64;
+pub const TASK_ID_SIZE: usize = 64;
 
 /// PIECE_NUMBER_SIZE is the size of the piece number in bytes.
-const PIECE_NUMBER_SIZE: usize = 4;
+pub const PIECE_NUMBER_SIZE: usize = 4;
 
 /// DownloadPiece represents a download piece request.
 ///
@@ -87,9 +87,21 @@ impl TryFrom<Bytes> for DownloadPiece {
         }
 
         Ok(DownloadPiece {
-            task_id: String::from_utf8(bytes[..TASK_ID_SIZE].to_vec())?,
+            task_id: String::from_utf8(
+                bytes
+                    .get(..TASK_ID_SIZE)
+                    .ok_or(Error::InvalidPacket(
+                        "insufficient bytes for task id".to_string(),
+                    ))?
+                    .to_vec(),
+            )?,
             piece_number: u32::from_be_bytes(
-                bytes[TASK_ID_SIZE..TASK_ID_SIZE + PIECE_NUMBER_SIZE].try_into()?,
+                bytes
+                    .get(TASK_ID_SIZE..TASK_ID_SIZE + PIECE_NUMBER_SIZE)
+                    .ok_or(Error::InvalidPacket(
+                        "insufficient bytes for piece number".to_string(),
+                    ))?
+                    .try_into()?,
             ),
         })
     }

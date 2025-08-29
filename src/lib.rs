@@ -48,6 +48,47 @@ impl Header {
             length: value_length,
         }
     }
+
+    /// new_download_piece creates a new Vortex packet header for download piece request.
+    pub fn new_download_piece() -> Self {
+        let mut rng = thread_rng();
+        Self {
+            id: rng.gen(),
+            tag: tlv::Tag::DownloadPiece,
+            length: (tlv::download_piece::TASK_ID_SIZE + tlv::download_piece::PIECE_NUMBER_SIZE)
+                as u32,
+        }
+    }
+
+    /// new_close creates a new Vortex packet header for close message.
+    pub fn new_close() -> Self {
+        let mut rng = thread_rng();
+        Self {
+            id: rng.gen(),
+            tag: tlv::Tag::Close,
+            length: 0,
+        }
+    }
+
+    /// new_piece_content creates a new Vortex packet header for piece content.
+    pub fn new_piece_content(value_length: u32) -> Self {
+        let mut rng = thread_rng();
+        Self {
+            id: rng.gen(),
+            tag: tlv::Tag::PieceContent,
+            length: value_length,
+        }
+    }
+
+    /// new_error creates a new Vortex packet header for error.
+    pub fn new_error(value_length: u32) -> Self {
+        let mut rng = thread_rng();
+        Self {
+            id: rng.gen(),
+            tag: tlv::Tag::Error,
+            length: value_length,
+        }
+    }
 }
 
 /// Implement TryFrom<Bytes> for Header.
@@ -63,9 +104,29 @@ impl TryFrom<Bytes> for Header {
             )));
         }
 
-        let id = bytes[0];
-        let tag = bytes[1].into();
-        let length = u32::from_be_bytes(bytes[2..HEADER_SIZE].try_into()?);
+        let id = bytes
+            .first()
+            .ok_or(Error::InvalidPacket(
+                "insufficient bytes for id".to_string(),
+            ))?
+            .to_owned();
+
+        let tag = bytes
+            .get(1)
+            .ok_or(Error::InvalidPacket(
+                "insufficient bytes for tag".to_string(),
+            ))?
+            .to_owned()
+            .into();
+
+        let length = u32::from_be_bytes(
+            bytes
+                .get(2..HEADER_SIZE)
+                .ok_or(Error::InvalidPacket(
+                    "insufficient bytes for length".to_string(),
+                ))?
+                .try_into()?,
+        );
         Ok(Header { id, tag, length })
     }
 }
@@ -134,13 +195,13 @@ impl Vortex {
 
     /// tag returns the tag of the Vortex packet.
     #[inline]
-    pub fn tag(&self) -> &tlv::Tag {
+    pub fn tag(&self) -> tlv::Tag {
         match self {
-            Vortex::DownloadPiece(header, _) => &header.tag,
-            Vortex::PieceContent(header, _) => &header.tag,
-            Vortex::Reserved(header) => &header.tag,
-            Vortex::Close(header) => &header.tag,
-            Vortex::Error(header, _) => &header.tag,
+            Vortex::DownloadPiece(header, _) => header.tag,
+            Vortex::PieceContent(header, _) => header.tag,
+            Vortex::Reserved(header) => header.tag,
+            Vortex::Close(header) => header.tag,
+            Vortex::Error(header, _) => header.tag,
         }
     }
 
@@ -310,7 +371,7 @@ mod tests {
         let packet = Vortex::new(tag, value.clone().freeze()).unwrap();
 
         assert_eq!(packet.id(), packet.id());
-        assert_eq!(packet.tag(), &tag);
+        assert_eq!(packet.tag(), tag);
         assert_eq!(packet.length(), value.len());
     }
 
@@ -320,7 +381,7 @@ mod tests {
         let value = Bytes::new();
         let packet = Vortex::new(tag, value.clone()).unwrap();
 
-        assert_eq!(packet.tag(), &tag);
+        assert_eq!(packet.tag(), tag);
         assert_eq!(packet.length(), value.len());
     }
 
@@ -344,7 +405,7 @@ mod tests {
         packet_bytes.extend_from_slice(&value);
         let packet = Vortex::try_from(packet_bytes.freeze()).unwrap();
 
-        assert_eq!(packet.tag(), &tag);
+        assert_eq!(packet.tag(), tag);
         assert_eq!(packet.length(), 0);
     }
 

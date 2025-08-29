@@ -25,6 +25,10 @@ pub enum Error {
     #[error("invalid length, cause: {0}")]
     InvalidLength(String),
 
+    /// InvalidTag indicates an invalid tag.
+    #[error("invalid tag: {0}")]
+    InvalidTag(String),
+
     /// TryFromSliceError indicates a conversion error.
     #[error(transparent)]
     TryFromSliceError(#[from] std::array::TryFromSliceError),
