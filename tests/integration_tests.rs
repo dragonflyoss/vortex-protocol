@@ -1,125 +1,74 @@
-use bytes::{BufMut, Bytes, BytesMut};
-use std::sync::{Arc, Mutex};
-use vortex_protocol::error::Error;
+/*
+ *     Copyright 2025 The Dragonfly Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+use bytes::Bytes;
+use chrono::Utc;
+use std::time::Duration;
+use vortex_protocol::error::{Error, Result};
+use vortex_protocol::tlv::download_piece::DownloadPiece;
+use vortex_protocol::tlv::piece_content::PieceContent;
 use vortex_protocol::tlv::Tag;
-use vortex_protocol::Vortex;
+use vortex_protocol::{Header, Vortex};
 
-/// Mock peer for testing.
-#[derive(Debug, Default)]
-pub struct MockPeer {
-    pieces: Arc<Mutex<Vec<Vec<u8>>>>,
-}
+pub fn handle_packet(bytes: Bytes) -> Result<Vortex> {
+    match bytes.try_into()? {
+        Vortex::DownloadPiece(_header, download_piece) => {
+            let content = "piece content".as_bytes();
+            let piece_content = PieceContent::new(
+                download_piece.piece_number(),
+                1,
+                content.len() as u64,
+                "crc32:864bbb04".to_string(),
+                "127.0.0.1-foo".to_string(),
+                1,
+                Duration::from_secs(30),
+                Utc::now().naive_utc(),
+            );
 
-impl MockPeer {
-    pub fn new() -> Self {
-        MockPeer {
-            pieces: Arc::new(Mutex::new(Vec::new())),
+            let piece_content_bytes: Bytes = piece_content.clone().into();
+            let header = Header::new(
+                Tag::PieceContent,
+                (piece_content_bytes.len() + content.len()) as u32,
+            );
+
+            Ok(Vortex::PieceContent(header, piece_content))
         }
-    }
-
-    pub fn add_piece(&self, piece: Vec<u8>) {
-        self.pieces.lock().unwrap().push(piece);
-    }
-
-    pub fn handle_packet(&self, packet: Vortex) -> Result<Vortex, Error> {
-        match packet.tag() {
-            Tag::DownloadPiece => {
-                let bytes: Bytes = packet.into();
-                let value = String::from_utf8(bytes[6..].to_vec())?;
-                let parts: Vec<&str> = value.split('-').collect();
-                if parts.len() != 2 {
-                    return Err(Error::InvalidPacket(
-                        "invalid download piece format".to_string(),
-                    ));
-                }
-
-                let piece_id: usize = parts[1].parse()?;
-                let pieces = self.pieces.lock().unwrap();
-                if piece_id >= pieces.len() {
-                    return Err(Error::InvalidPacket(format!(
-                        "piece {} not found",
-                        piece_id
-                    )));
-                }
-
-                Ok(Vortex::new(
-                    Tag::PieceContent,
-                    pieces[piece_id].clone().into(),
-                )?)
-            }
-            _ => Err(Error::InvalidPacket("unexpected tag".to_string())),
-        }
+        _ => Err(Error::InvalidPacket("unexpected tag".to_string())),
     }
 }
 
 #[test]
 fn test_piece_download_flow() {
-    let peer = MockPeer::new();
-    let piece = vec![1, 2, 3, 4];
-    peer.add_piece(piece.clone());
-
-    // Create a download request for piece 0.
-    let task_id = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-    let request = Vortex::new(
-        Tag::DownloadPiece,
-        format!("{}-0", task_id).into_bytes().into(),
-    )
-    .unwrap();
-
-    // Handle the request.
-    let response = peer.handle_packet(request).unwrap();
-    let tag = *response.tag();
-    let response_bytes: Bytes = response.into();
-
-    // Verify the response.
-    assert_eq!(&tag, &Tag::PieceContent);
-    assert_eq!(&response_bytes[6..], &piece);
-}
-
-#[test]
-fn test_error_propagation() {
-    let peer = MockPeer::new();
-    let task_id = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-
-    // Test with missing piece.
-    let request = Vortex::new(
-        Tag::DownloadPiece,
-        format!("{}-42", task_id).into_bytes().into(),
-    )
-    .unwrap();
-    let result = peer.handle_packet(request);
-    assert!(matches!(result, Err(Error::InvalidPacket(_))));
-
-    // Test with unexpected tag.
-    let request = Vortex::new(Tag::PieceContent, vec![1, 2, 3, 4].into()).unwrap();
-    let result = peer.handle_packet(request);
-    assert!(matches!(result, Err(Error::InvalidPacket(_))));
-}
-
-#[test]
-fn test_invalid_length() {
-    // Create a packet with invalid length in the header.
-    let mut packet_bytes = BytesMut::with_capacity(6);
-    packet_bytes.put_u8(42); // id
-    packet_bytes.put_u8(Tag::PieceContent.into()); // tag
-    packet_bytes.put_u32(u32::MAX); // length (too large)
-
-    // Attempt to parse the packet with invalid length.
-    let result = Vortex::try_from(packet_bytes.freeze());
-    assert!(matches!(result, Err(Error::InvalidLength(_))));
-}
-
-#[test]
-fn test_invalid_format() {
-    // Test with invalid format (missing separator).
-    let task_id = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-    let result = Vortex::new(Tag::DownloadPiece, task_id.as_bytes().to_vec().into());
-    assert!(matches!(result, Err(Error::InvalidPacket(_))));
-
-    // Test with invalid piece ID format.
-    let result = Vortex::new(
-        Tag::DownloadPiece,
-        format!("{}-abc", task_id).into_bytes().into(),
+    let download_piece_packet = Vortex::DownloadPiece(
+        Header::new_download_piece(),
+        DownloadPiece::new("a".repeat(64), 1),
     );
-    assert!(matches!(result, Err(Error::ParseIntError(_))));
+
+    match handle_packet(download_piece_packet.into()).unwrap() {
+        Vortex::PieceContent(_header, piece_content) => {
+            assert_eq!(piece_content.metadata().number, 1);
+            assert_eq!(piece_content.metadata().offset, 1);
+            assert_eq!(piece_content.metadata().length, 13);
+            assert_eq!(piece_content.metadata().digest, "crc32:864bbb04");
+            assert_eq!(piece_content.metadata().parent_id, "127.0.0.1-foo");
+            assert_eq!(piece_content.metadata().traffic_type, 1);
+            assert_eq!(piece_content.metadata().cost, Duration::from_secs(30));
+            assert!(piece_content.metadata().created_at <= Utc::now().naive_utc());
+            assert_eq!(piece_content.metadata_len(), 72);
+        }
+        _ => panic!("expected PieceContent packet"),
+    }
 }

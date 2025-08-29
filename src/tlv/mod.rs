@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+use serde::{Deserialize, Serialize};
+
 pub mod close;
 pub mod download_piece;
 pub mod error;
@@ -21,7 +23,7 @@ pub mod piece_content;
 
 /// Tag Definitions
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tag {
     /// Download the content of a piece from a peer. It is composed of `{Task ID}-{Piece ID}`,
     /// where the Task ID is a 32-byte SHA-256 value and the Piece ID is a number.
@@ -41,17 +43,15 @@ pub enum Tag {
 }
 
 /// Implement TryFrom<u8> for Tag.
-impl TryFrom<u8> for Tag {
-    type Error = ();
-
+impl From<u8> for Tag {
     /// Converts a u8 to a Tag enum.
-    fn try_from(value: u8) -> Result<Self, ()> {
+    fn from(value: u8) -> Self {
         match value {
-            0 => Ok(Tag::DownloadPiece),
-            1 => Ok(Tag::PieceContent),
-            2..=253 => Ok(Tag::Reserved(value)),
-            254 => Ok(Tag::Close),
-            255 => Ok(Tag::Error),
+            0 => Tag::DownloadPiece,
+            1 => Tag::PieceContent,
+            2..=253 => Tag::Reserved(value),
+            254 => Tag::Close,
+            255 => Tag::Error,
         }
     }
 }
@@ -76,12 +76,12 @@ mod tests {
 
     #[test]
     fn test_try_from_u8() {
-        assert_eq!(Tag::try_from(0), Ok(Tag::DownloadPiece));
-        assert_eq!(Tag::try_from(1), Ok(Tag::PieceContent));
-        assert_eq!(Tag::try_from(2), Ok(Tag::Reserved(2)));
-        assert_eq!(Tag::try_from(253), Ok(Tag::Reserved(253)));
-        assert_eq!(Tag::try_from(254), Ok(Tag::Close));
-        assert_eq!(Tag::try_from(255), Ok(Tag::Error));
+        assert_eq!(Tag::from(0), Tag::DownloadPiece);
+        assert_eq!(Tag::from(1), Tag::PieceContent);
+        assert_eq!(Tag::from(2), Tag::Reserved(2));
+        assert_eq!(Tag::from(253), Tag::Reserved(253));
+        assert_eq!(Tag::from(254), Tag::Close);
+        assert_eq!(Tag::from(255), Tag::Error);
     }
 
     #[test]

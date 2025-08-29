@@ -17,9 +17,8 @@
 use crate::error::{Error as VortexError, Result as VortexResult};
 use bytes::{BufMut, Bytes, BytesMut};
 
-/// SEPARATOR is the separator character used in the error request, separating the error code
-/// and error message. It is a hyphen character ':'.
-const SEPARATOR: u8 = b':';
+/// CODE_SIZE is the size of the error code in bytes.
+const CODE_SIZE: usize = 1;
 
 /// Code represents a error code.
 #[repr(u8)]
@@ -43,10 +42,10 @@ pub enum Code {
 
 /// Implement TryFrom<u8> for Code.
 impl TryFrom<u8> for Code {
-    type Error = ();
+    type Error = VortexError;
 
     /// Converts a u8 to a Code enum.
-    fn try_from(value: u8) -> Result<Self, ()> {
+    fn try_from(value: u8) -> VortexResult<Self> {
         match value {
             0 => Ok(Code::Unknown),
             1 => Ok(Code::InvalidArgument),
@@ -74,14 +73,13 @@ impl From<Code> for u8 {
 /// Error represents a error request.
 ///
 /// Value Format:
-///  - Error Code (8 bits): Error code.
-///  - Separator (1 byte): Separator character ':'.
+///  - Error Code (1 bytes): Error code.
 ///  - Error Message (variable): Error message.
 ///
 /// ```text
-/// ----------------------------------------------------------------------
-/// | Error Code (8 bits) | Separator (1 byte) |      Error Message      |
-/// ----------------------------------------------------------------------
+/// -------------------------------------------------
+/// | Error Code (1 bytes) |      Error Message      |
+/// -------------------------------------------------
 /// ```
 #[derive(Debug, Clone)]
 pub struct Error {
@@ -93,7 +91,7 @@ pub struct Error {
 impl Error {
     /// new creates a new Error request.
     pub fn new(code: Code, message: String) -> Self {
-        Error { code, message }
+        Self { code, message }
     }
 
     /// code returns the error code.
@@ -106,10 +104,10 @@ impl Error {
         &self.message
     }
 
-    /// len returns the length of the error request, including the error code, separator, and error
+    /// len returns the length of the error request, including the error code, error
     /// message.
     pub fn len(&self) -> usize {
-        self.message.len() + 2
+        self.message.len() + CODE_SIZE
     }
 
     /// is_empty returns whether the error request is empty.
@@ -124,7 +122,6 @@ impl From<Error> for Bytes {
     fn from(err: Error) -> Self {
         let mut bytes = BytesMut::with_capacity(err.len());
         bytes.put_u8(err.code.into());
-        bytes.put_u8(SEPARATOR);
         bytes.extend_from_slice(err.message.as_bytes());
         bytes.freeze()
     }
@@ -136,35 +133,32 @@ impl TryFrom<Bytes> for Error {
 
     /// try_from decodes the error request from the byte slice.
     fn try_from(bytes: Bytes) -> VortexResult<Self> {
-        let mut parts = bytes.splitn(2, |&b| b == SEPARATOR);
-
-        let code = parts
-            .next()
-            .ok_or(VortexError::InvalidPacket("missing error code".to_string()))?;
-
-        if code.len() != 1 {
-            return Err(VortexError::InvalidPacket("invalid error code".to_string()));
+        if bytes.len() < CODE_SIZE {
+            return Err(VortexError::InvalidLength(format!(
+                "expected at least {} bytes for Error, got {}",
+                CODE_SIZE,
+                bytes.len()
+            )));
         }
 
-        let code: Code = code
-            .first()
-            .copied()
-            .ok_or(VortexError::InvalidPacket("missing error code".to_string()))?
-            .try_into()
-            .unwrap();
-
-        let message = std::str::from_utf8(parts.next().ok_or(VortexError::InvalidPacket(
-            "missing error message".to_string(),
-        ))?)?
-        .to_string();
-
-        if message.is_empty() {
-            return Err(VortexError::InvalidPacket(
-                "empty error message".to_string(),
-            ));
-        }
-
-        Ok(Error { code, message })
+        Ok(Error {
+            code: Code::try_from(
+                bytes
+                    .first()
+                    .ok_or(VortexError::InvalidPacket(
+                        "insufficient bytes for code".to_string(),
+                    ))?
+                    .to_owned(),
+            )?,
+            message: String::from_utf8(
+                bytes
+                    .get(CODE_SIZE..)
+                    .ok_or(VortexError::InvalidPacket(
+                        "insufficient bytes for message".to_string(),
+                    ))?
+                    .to_vec(),
+            )?,
+        })
     }
 }
 
@@ -181,7 +175,7 @@ mod tests {
 
         assert_eq!(error.code(), code);
         assert_eq!(error.message(), message);
-        assert_eq!(error.len(), message.len() + 2);
+        assert_eq!(error.len(), message.len() + CODE_SIZE);
     }
 
     #[test]
@@ -205,16 +199,7 @@ mod tests {
 
     #[test]
     fn test_from_bytes_invalid_input() {
-        // Test missing separator.
-        let invalid_bytes = Bytes::from("invalid_input_without_separator");
-        assert!(Error::try_from(invalid_bytes).is_err());
-
-        // Test missing error message.
-        let invalid_bytes = Bytes::from(format!("{}:", 1));
-        assert!(Error::try_from(invalid_bytes).is_err());
-
-        // Test invalid error code format.
-        let invalid_bytes = Bytes::from(format!("{}:{}", 256, "Invalid code"));
+        let invalid_bytes = Bytes::from("");
         assert!(Error::try_from(invalid_bytes).is_err());
     }
 }
