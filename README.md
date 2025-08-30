@@ -32,10 +32,3 @@ cargo bench
 # Run specific benchmark group
 cargo bench "Vortex Packet Creation"
 ```
-
-The benchmarks cover various packet sizes:
-
-- Small packets (32 bytes)
-- Medium packets (1 KB)
-- Large packets (1 MB)
-- Extra large packets (16 MB)

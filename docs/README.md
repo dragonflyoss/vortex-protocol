@@ -6,9 +6,9 @@ scalable file sharing capabilities.
 
 ## Protocol Fields
 
-- **Packet Identifier (8 bits):** Uniquely identifies each packet.
-- **Tag (T, 8 bits):** Specifies the type of data in the value field.
-- **Length (L, 32 bits):** Indicates the length (in bytes) of the Value field, supporting up to 4GiB of data.
+- **Packet Identifier (1 bytes):** Uniquely identifies each packet.
+- **Tag (T, 1 bytes):** Specifies the type of data in the value field.
+- **Length (L, 4 bytes):** Indicates the length (in bytes) of the Value field, supporting up to 4GiB of data.
 - **Value (V, variable length):** The actual data, up to 4GiB.
 
 ## Tag Definitions
@@ -28,13 +28,13 @@ scalable file sharing capabilities.
 
 ## Packet Format
 
-| Packet ID (8 bits) | Tag (8 bits) | Length (32 bits) | Value (up to 4GiB) |
-| ------------------ | ------------ | ---------------- | ------------------ |
-| 8-bit              | 8-bit        | 32-bit           | variable           |
+| Packet ID (1 bytes) | Tag (1 bytes) | Length (4 bytes) | Value (up to 4GiB) |
+| ------------------- | ------------- | ---------------- | ------------------ |
+| 1-bytes             | 1-bytes       | 4-bytes          | variable           |
 
-- **Packet ID:** 8-bit unsigned integer.
-- **Tag:** 8-bit field describing the content type.
-- **Length:** 32-bit field specifying the size of the Value.
+- **Packet ID:** 1-bytes unsigned integer.
+- **Tag:** 1-bytes field describing the content type.
+- **Length:** 4-bytes field specifying the size of the Value.
 - **Value:** Actual data, size determined by Length.
 
 ## Behavior
