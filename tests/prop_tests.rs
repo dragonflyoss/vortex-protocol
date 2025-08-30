@@ -31,6 +31,12 @@ fn generate_value_bytes(tag: Tag) -> Bytes {
 
             download_piece.into()
         }
+        Tag::DownloadPersistentCachePiece => {
+            // Task ID must be 32 bytes (64 hex chars).
+            let task_id = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+            let piece_id = 42;
+            format!("{}-{}", task_id, piece_id).into_bytes().into()
+        }
         Tag::Close => {
             // Close tag can be empty.
             vec![].into()

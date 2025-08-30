@@ -32,7 +32,11 @@ pub enum Tag {
     /// The content of a piece, with a maximum size of 4 GiB per piece.
     PieceContent = 1,
 
-    /// Reserved for future use, for tags 2-254.
+    /// Download the content of a persistent_cache_piece from a peer. It is composed of `{Task ID}-{Piece ID}`,
+    /// where the Task ID is a 32-byte SHA-256 value and the Piece ID is a number.
+    DownloadPersistentCachePiece = 2,
+
+    /// Reserved for future use, for tags 3-254.
     Reserved(u8),
 
     /// Close the connection. If server or client receives this tag, it will close the connection.
@@ -49,7 +53,8 @@ impl From<u8> for Tag {
         match value {
             0 => Tag::DownloadPiece,
             1 => Tag::PieceContent,
-            2..=253 => Tag::Reserved(value),
+            2 => Tag::DownloadPersistentCachePiece,
+            3..=253 => Tag::Reserved(value),
             254 => Tag::Close,
             255 => Tag::Error,
         }
@@ -63,6 +68,7 @@ impl From<Tag> for u8 {
         match tag {
             Tag::DownloadPiece => 0,
             Tag::PieceContent => 1,
+            Tag::DownloadPersistentCachePiece => 2,
             Tag::Reserved(value) => value,
             Tag::Close => 254,
             Tag::Error => 255,
@@ -78,7 +84,8 @@ mod tests {
     fn test_try_from_u8() {
         assert_eq!(Tag::from(0), Tag::DownloadPiece);
         assert_eq!(Tag::from(1), Tag::PieceContent);
-        assert_eq!(Tag::from(2), Tag::Reserved(2));
+        assert_eq!(Tag::from(2), Tag::DownloadPersistentCachePiece);
+        assert_eq!(Tag::from(3), Tag::Reserved(3));
         assert_eq!(Tag::from(253), Tag::Reserved(253));
         assert_eq!(Tag::from(254), Tag::Close);
         assert_eq!(Tag::from(255), Tag::Error);
@@ -88,7 +95,8 @@ mod tests {
     fn test_from_tag() {
         assert_eq!(u8::from(Tag::DownloadPiece), 0);
         assert_eq!(u8::from(Tag::PieceContent), 1);
-        assert_eq!(u8::from(Tag::Reserved(2)), 2);
+        assert_eq!(u8::from(Tag::DownloadPersistentCachePiece), 2);
+        assert_eq!(u8::from(Tag::Reserved(3)), 3);
         assert_eq!(u8::from(Tag::Reserved(253)), 253);
         assert_eq!(u8::from(Tag::Close), 254);
         assert_eq!(u8::from(Tag::Error), 255);
