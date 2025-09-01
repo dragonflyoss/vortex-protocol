@@ -88,6 +88,21 @@ impl Header {
             length: value_length,
         }
     }
+
+    /// id returns the packet identifier.
+    pub fn id(&self) -> u8 {
+        self.id
+    }
+
+    /// tag returns the tag.
+    pub fn tag(&self) -> tlv::Tag {
+        self.tag
+    }
+
+    /// length returns the length of the value field.
+    pub fn length(&self) -> u32 {
+        self.length
+    }
 }
 
 /// Implement TryFrom<Bytes> for Header.
