@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-use serde::{Deserialize, Serialize};
-
 pub mod close;
 pub mod download_piece;
 pub mod error;
@@ -23,7 +21,7 @@ pub mod piece_content;
 
 /// Tag Definitions
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tag {
     /// Download the content of a piece from a peer. It is composed of `{Task ID}-{Piece ID}`,
     /// where the Task ID is a 32-byte SHA-256 value and the Piece ID is a number.
