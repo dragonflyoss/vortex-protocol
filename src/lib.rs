@@ -17,7 +17,6 @@
 use crate::error::{Error, Result};
 use bytes::{BufMut, Bytes, BytesMut};
 use rand::prelude::*;
-use serde::{Deserialize, Serialize};
 
 pub mod error;
 pub mod tlv;
@@ -30,7 +29,7 @@ pub const HEADER_SIZE: usize = 6;
 const MAX_VALUE_SIZE: usize = 4 * 1024 * 1024 * 1024;
 
 /// Header represents the Vortex packet header.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Header {
     id: u8,
     tag: tlv::Tag,
