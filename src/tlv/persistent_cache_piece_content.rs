@@ -47,7 +47,7 @@ const COST_SIZE: usize = 8;
 /// CREATED_AT_SIZE is the size of the created at in bytes.
 const CREATED_AT_SIZE: usize = 8;
 
-/// PieceContent represents a piece metadata and piece content request.
+/// PersistentCachePieceContent represents a persistent cache piece metadata and piece content request.
 ///
 /// Value Format:
 ///   - Metadata Length (4 bytes): Length of the metadata section.
@@ -71,14 +71,14 @@ const CREATED_AT_SIZE: usize = 8;
 /// ------------------------------------------------------------------------------------------------------------------------------------------
 /// ```
 #[derive(Debug, Clone)]
-pub struct PieceContent {
+pub struct PersistentCachePieceContent {
     metadata_length: u32,
-    metadata: PieceMetadata,
+    metadata: PersistentCachePieceMetadata,
 }
 
-/// PieceContent implements the PieceContent functions.
-impl PieceContent {
-    /// new creates a new PieceContent request.
+/// PersistentCachePieceContent implements the PersistentCachePieceContent functions.
+impl PersistentCachePieceContent {
+    /// new creates a new PersistentCachePieceContent request.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         number: u32,
@@ -101,7 +101,7 @@ impl PieceContent {
                 + TRAFFIC_TYPE_SIZE
                 + COST_SIZE
                 + CREATED_AT_SIZE) as u32,
-            metadata: PieceMetadata {
+            metadata: PersistentCachePieceMetadata {
                 number,
                 offset,
                 length,
@@ -114,8 +114,8 @@ impl PieceContent {
         }
     }
 
-    ///  metadata returns the piece metadata.
-    pub fn metadata(&self) -> PieceMetadata {
+    ///  metadata returns the persistent cache piece metadata.
+    pub fn metadata(&self) -> PersistentCachePieceMetadata {
         self.metadata.clone()
     }
 
@@ -124,17 +124,17 @@ impl PieceContent {
         self.metadata_length
     }
 
-    /// is_empty returns whether the piece content request is empty.
+    /// is_empty returns whether the persistent cache piece content request is empty.
     pub fn is_empty(&self) -> bool {
         self.metadata.length == 0
     }
 }
 
-/// Implement TryFrom<Bytes> for PieceContent for conversion from a byte slice.
-impl TryFrom<Bytes> for PieceContent {
+/// Implement TryFrom<Bytes> for PersistentCachePieceContent for conversion from a byte slice.
+impl TryFrom<Bytes> for PersistentCachePieceContent {
     type Error = Error;
 
-    /// try_from decodes the piece content request from the byte slice.
+    /// try_from decodes the persistent cache piece content request from the byte slice.
     fn try_from(bytes: Bytes) -> Result<Self> {
         let metadata_length = u32::from_be_bytes(
             bytes
@@ -147,7 +147,7 @@ impl TryFrom<Bytes> for PieceContent {
 
         if bytes.len() != METADATA_LENGTH_SIZE + metadata_length as usize {
             return Err(Error::InvalidPacket(format!(
-                "expected {} bytes for PieceContent, got {}",
+                "expected {} bytes for PersistentCachePieceContent, got {}",
                 METADATA_LENGTH_SIZE + metadata_length as usize,
                 bytes.len()
             )));
@@ -158,17 +158,17 @@ impl TryFrom<Bytes> for PieceContent {
             metadata_length,
         )
             .try_into()?;
-        Ok(PieceContent {
+        Ok(PersistentCachePieceContent {
             metadata_length,
             metadata,
         })
     }
 }
 
-/// Implement From<PieceContent> for Bytes for conversion to a byte slice.
-impl From<PieceContent> for Bytes {
-    /// from converts the piece content request to a byte slice.
-    fn from(content: PieceContent) -> Bytes {
+/// Implement From<PersistentCachePieceContent> for Bytes for conversion to a byte slice.
+impl From<PersistentCachePieceContent> for Bytes {
+    /// from converts the persistent cache piece content request to a byte slice.
+    fn from(content: PersistentCachePieceContent) -> Bytes {
         let (metadata_bytes, metadata_length) = content.metadata.into();
         let mut bytes = BytesMut::with_capacity(METADATA_LENGTH_SIZE + metadata_length as usize);
         bytes.put_u32(metadata_length);
@@ -177,9 +177,9 @@ impl From<PieceContent> for Bytes {
     }
 }
 
-/// PieceMetadata holds the metadata information for a piece.
+/// PersistentCachePieceMetadata holds the metadata information for a persistent cache piece.
 #[derive(Debug, Clone)]
-pub struct PieceMetadata {
+pub struct PersistentCachePieceMetadata {
     pub number: u32,
     pub offset: u64,
     pub length: u64,
@@ -190,9 +190,9 @@ pub struct PieceMetadata {
     pub created_at: NaiveDateTime,
 }
 
-/// PieceMetadata implements the PieceMetadata functions.
-impl PieceMetadata {
-    /// new creates a new PieceMetadata.
+/// PersistentCachePieceMetadata implements the PersistentCachePieceMetadata functions.
+impl PersistentCachePieceMetadata {
+    /// new creates a new PersistentCachePieceMetadata.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         number: u32,
@@ -217,16 +217,16 @@ impl PieceMetadata {
     }
 }
 
-/// Implement TryFrom<Bytes> for PieceMetadata for conversion from a byte slice.
-impl TryFrom<(Bytes, u32)> for PieceMetadata {
+/// Implement TryFrom<Bytes> for PersistentCachePieceMetadata for conversion from a byte slice.
+impl TryFrom<(Bytes, u32)> for PersistentCachePieceMetadata {
     type Error = Error;
 
-    /// try_from decodes the piece metadata request from the byte slice.
+    /// try_from decodes the persistent cache piece metadata request from the byte slice.
     fn try_from(input: (Bytes, u32)) -> Result<Self> {
         let (bytes, length) = input;
         if bytes.len() != length as usize {
             return Err(Error::InvalidLength(format!(
-                "expected {} bytes for PieceMetadata, got {}",
+                "expected {} bytes for PersistentCachePieceMetadata, got {}",
                 length,
                 bytes.len()
             )));
@@ -335,7 +335,7 @@ impl TryFrom<(Bytes, u32)> for PieceMetadata {
         )
         .ok_or_else(|| Error::InvalidPacket("invalid timestamp for created_at".to_string()))?
         .naive_utc();
-        Ok(PieceMetadata {
+        Ok(PersistentCachePieceMetadata {
             number,
             offset,
             length,
@@ -348,11 +348,11 @@ impl TryFrom<(Bytes, u32)> for PieceMetadata {
     }
 }
 
-/// Implement From<PieceMetadata> for Bytes for conversion to a byte slice.
-impl From<PieceMetadata> for (Bytes, u32) {
-    /// from converts the piece metadata request to a byte slice.
-    fn from(metadata: PieceMetadata) -> (Bytes, u32) {
-        let PieceMetadata {
+/// Implement From<PersistentCachePieceMetadata> for Bytes for conversion to a byte slice.
+impl From<PersistentCachePieceMetadata> for (Bytes, u32) {
+    /// from converts the persistent cache piece metadata request to a byte slice.
+    fn from(metadata: PersistentCachePieceMetadata) -> (Bytes, u32) {
+        let PersistentCachePieceMetadata {
             number,
             offset,
             length,
@@ -396,8 +396,8 @@ mod tests {
     use bytes::Bytes;
     use std::time::Duration;
 
-    fn create_test_piece_content() -> PieceContent {
-        PieceContent::new(
+    fn create_test_persistent_cache_piece_content() -> PersistentCachePieceContent {
+        PersistentCachePieceContent::new(
             42,
             1024,
             2048,
@@ -409,8 +409,8 @@ mod tests {
         )
     }
 
-    fn create_test_metadata() -> PieceMetadata {
-        PieceMetadata {
+    fn create_test_metadata() -> PersistentCachePieceMetadata {
+        PersistentCachePieceMetadata {
             number: 42,
             offset: 1024,
             length: 2048,
@@ -423,10 +423,10 @@ mod tests {
     }
 
     #[test]
-    fn test_piece_content_conversion_roundtrip() {
-        let original = create_test_piece_content();
+    fn test_persistent_cache_piece_content_conversion_roundtrip() {
+        let original = create_test_persistent_cache_piece_content();
         let bytes = Bytes::from(original.clone());
-        let result = PieceContent::try_from(bytes).unwrap();
+        let result = PersistentCachePieceContent::try_from(bytes).unwrap();
 
         assert_eq!(result.metadata().number, original.metadata().number);
         assert_eq!(result.metadata().offset, original.metadata().offset);
@@ -443,28 +443,28 @@ mod tests {
     }
 
     #[test]
-    fn test_piece_content_try_from_insufficient_bytes_for_metadata_length() {
+    fn test_persistent_cache_piece_content_try_from_insufficient_bytes_for_metadata_length() {
         let short_bytes = Bytes::from(vec![0u8; 4]); // Less than METADATA_LENGTH_SIZE (8)
-        let result = PieceContent::try_from(short_bytes);
+        let result = PersistentCachePieceContent::try_from(short_bytes);
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), Error::InvalidPacket(_)));
     }
 
     #[test]
-    fn test_piece_content_try_from_insufficient_metadata_bytes() {
+    fn test_persistent_cache_piece_content_try_from_insufficient_metadata_bytes() {
         let mut bytes = BytesMut::new();
         bytes.put_u32(100); // metadata_length = 100
         bytes.put(&vec![0u8; 50][..]); // But only provide 50 bytes of metadata
 
-        let result = PieceContent::try_from(bytes.freeze());
+        let result = PersistentCachePieceContent::try_from(bytes.freeze());
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), Error::InvalidPacket(_)));
     }
 
     #[test]
-    fn test_piece_content_with_empty_parent_id() {
-        let piece_content = PieceContent::new(
+    fn test_persistent_cache_piece_content_with_empty_parent_id() {
+        let persistent_cache_piece_content = PersistentCachePieceContent::new(
             1,
             0,
             100,
@@ -475,8 +475,8 @@ mod tests {
             DateTime::from_timestamp(1693152000, 0).unwrap().naive_utc(),
         );
 
-        let bytes = Bytes::from(piece_content.clone());
-        let result = PieceContent::try_from(bytes).unwrap();
+        let bytes = Bytes::from(persistent_cache_piece_content.clone());
+        let result = PersistentCachePieceContent::try_from(bytes).unwrap();
 
         assert_eq!(result.metadata().parent_id, "");
         assert_eq!(result.metadata().number, 1);
@@ -485,9 +485,9 @@ mod tests {
     }
 
     #[test]
-    fn test_piece_content_with_long_parent_id() {
+    fn test_persistent_cache_piece_content_with_long_parent_id() {
         let long_parent_id = "x".repeat(1000);
-        let piece_content = PieceContent::new(
+        let persistent_cache_piece_content = PersistentCachePieceContent::new(
             999,
             12345,
             67890,
@@ -498,8 +498,8 @@ mod tests {
             DateTime::from_timestamp(1693152000, 0).unwrap().naive_utc(),
         );
 
-        let bytes = Bytes::from(piece_content.clone());
-        let result = PieceContent::try_from(bytes).unwrap();
+        let bytes = Bytes::from(persistent_cache_piece_content.clone());
+        let result = PersistentCachePieceContent::try_from(bytes).unwrap();
 
         assert_eq!(result.metadata().parent_id, long_parent_id);
         assert_eq!(result.metadata().number, 999);
@@ -508,8 +508,8 @@ mod tests {
     }
 
     #[test]
-    fn test_piece_content_with_zero_values() {
-        let piece_content = PieceContent::new(
+    fn test_persistent_cache_piece_content_with_zero_values() {
+        let persistent_cache_piece_content = PersistentCachePieceContent::new(
             0,
             0,
             0,
@@ -520,8 +520,8 @@ mod tests {
             DateTime::from_timestamp(1693152000, 0).unwrap().naive_utc(),
         );
 
-        let bytes = Bytes::from(piece_content.clone());
-        let result = PieceContent::try_from(bytes).unwrap();
+        let bytes = Bytes::from(persistent_cache_piece_content.clone());
+        let result = PersistentCachePieceContent::try_from(bytes).unwrap();
 
         assert_eq!(result.metadata().number, 0);
         assert_eq!(result.metadata().offset, 0);
@@ -532,8 +532,8 @@ mod tests {
     }
 
     #[test]
-    fn test_piece_content_with_max_values() {
-        let piece_content = PieceContent::new(
+    fn test_persistent_cache_piece_content_with_max_values() {
+        let persistent_cache_piece_content = PersistentCachePieceContent::new(
             u32::MAX,
             u64::MAX,
             u64::MAX,
@@ -544,8 +544,8 @@ mod tests {
             DateTime::from_timestamp(1693152000, 0).unwrap().naive_utc(),
         );
 
-        let bytes = Bytes::from(piece_content.clone());
-        let result = PieceContent::try_from(bytes).unwrap();
+        let bytes = Bytes::from(persistent_cache_piece_content.clone());
+        let result = PersistentCachePieceContent::try_from(bytes).unwrap();
 
         assert_eq!(result.metadata().number, u32::MAX);
         assert_eq!(result.metadata().offset, u64::MAX);
@@ -555,8 +555,8 @@ mod tests {
     }
 
     #[test]
-    fn test_piece_content_metadata_length_calculation() {
-        let piece_content = PieceContent::new(
+    fn test_persistent_cache_piece_content_metadata_length_calculation() {
+        let persistent_cache_piece_content = PersistentCachePieceContent::new(
             123,
             456,
             789,
@@ -578,16 +578,19 @@ mod tests {
             + COST_SIZE
             + CREATED_AT_SIZE) as u32;
 
-        assert_eq!(piece_content.metadata_len(), expected_length);
+        assert_eq!(
+            persistent_cache_piece_content.metadata_len(),
+            expected_length
+        );
 
-        let bytes = Bytes::from(piece_content.clone());
-        let result = PieceContent::try_from(bytes).unwrap();
+        let bytes = Bytes::from(persistent_cache_piece_content.clone());
+        let result = PersistentCachePieceContent::try_from(bytes).unwrap();
         assert_eq!(result.metadata_len(), expected_length);
     }
 
     #[test]
-    fn test_piece_content_with_short_digest() {
-        let piece_content = PieceContent::new(
+    fn test_persistent_cache_piece_content_with_short_digest() {
+        let persistent_cache_piece_content = PersistentCachePieceContent::new(
             1,
             0,
             100,
@@ -598,17 +601,17 @@ mod tests {
             DateTime::from_timestamp(1693152000, 0).unwrap().naive_utc(),
         );
 
-        let bytes = Bytes::from(piece_content.clone());
-        let result = PieceContent::try_from(bytes).unwrap();
+        let bytes = Bytes::from(persistent_cache_piece_content.clone());
+        let result = PersistentCachePieceContent::try_from(bytes).unwrap();
 
         assert_eq!(result.metadata().digest, "short");
         assert_eq!(result.metadata().number, 1);
     }
 
     #[test]
-    fn test_piece_content_with_long_digest() {
+    fn test_persistent_cache_piece_content_with_long_digest() {
         let long_digest = "g".repeat(128); // Longer than typical digest
-        let piece_content = PieceContent::new(
+        let persistent_cache_piece_content = PersistentCachePieceContent::new(
             5,
             1000,
             2000,
@@ -619,8 +622,8 @@ mod tests {
             DateTime::from_timestamp(1693152000, 0).unwrap().naive_utc(),
         );
 
-        let bytes = Bytes::from(piece_content.clone());
-        let result = PieceContent::try_from(bytes).unwrap();
+        let bytes = Bytes::from(persistent_cache_piece_content.clone());
+        let result = PersistentCachePieceContent::try_from(bytes).unwrap();
 
         assert_eq!(result.metadata().digest, long_digest);
         assert_eq!(result.metadata().number, 5);
@@ -629,19 +632,22 @@ mod tests {
     }
 
     #[test]
-    fn test_piece_content_bytes_structure() {
-        let piece_content = create_test_piece_content();
-        let bytes: Bytes = piece_content.clone().into();
+    fn test_persistent_cache_piece_content_bytes_structure() {
+        let persistent_cache_piece_content = create_test_persistent_cache_piece_content();
+        let bytes: Bytes = persistent_cache_piece_content.clone().into();
 
         let metadata_length_bytes = &bytes[..METADATA_LENGTH_SIZE];
         let metadata_length = u32::from_be_bytes(metadata_length_bytes.try_into().unwrap());
-        assert_eq!(metadata_length, piece_content.metadata_len());
+        assert_eq!(
+            metadata_length,
+            persistent_cache_piece_content.metadata_len()
+        );
         assert_eq!(bytes.len(), METADATA_LENGTH_SIZE + metadata_length as usize);
     }
 
     #[test]
-    fn test_piece_content_new() {
-        let piece_content = PieceContent::new(
+    fn test_persistent_cache_piece_content_new() {
+        let persistent_cache_piece_content = PersistentCachePieceContent::new(
             42,
             1024,
             2048,
@@ -652,22 +658,31 @@ mod tests {
             DateTime::from_timestamp(1693152000, 0).unwrap().naive_utc(),
         );
 
-        assert_eq!(piece_content.metadata().number, 42);
-        assert_eq!(piece_content.metadata().offset, 1024);
-        assert_eq!(piece_content.metadata().length, 2048);
-        assert_eq!(piece_content.metadata().digest, "a".repeat(32));
-        assert_eq!(piece_content.metadata().parent_id, "test_parent_id");
-        assert_eq!(piece_content.metadata().traffic_type, 1);
-        assert_eq!(piece_content.metadata().cost, Duration::from_secs(5));
+        assert_eq!(persistent_cache_piece_content.metadata().number, 42);
+        assert_eq!(persistent_cache_piece_content.metadata().offset, 1024);
+        assert_eq!(persistent_cache_piece_content.metadata().length, 2048);
         assert_eq!(
-            piece_content.metadata_len(),
+            persistent_cache_piece_content.metadata().digest,
+            "a".repeat(32)
+        );
+        assert_eq!(
+            persistent_cache_piece_content.metadata().parent_id,
+            "test_parent_id"
+        );
+        assert_eq!(persistent_cache_piece_content.metadata().traffic_type, 1);
+        assert_eq!(
+            persistent_cache_piece_content.metadata().cost,
+            Duration::from_secs(5)
+        );
+        assert_eq!(
+            persistent_cache_piece_content.metadata_len(),
             (NUMBER_SIZE
                 + OFFSET_SIZE
                 + LENGTH_SIZE
                 + DIGEST_LENGTH_SIZE
-                + piece_content.metadata().digest.len()
+                + persistent_cache_piece_content.metadata().digest.len()
                 + PARENT_ID_LENGTH_SIZE
-                + piece_content.metadata().parent_id.len()
+                + persistent_cache_piece_content.metadata().parent_id.len()
                 + TRAFFIC_TYPE_SIZE
                 + COST_SIZE
                 + CREATED_AT_SIZE) as u32,
@@ -675,8 +690,8 @@ mod tests {
     }
 
     #[test]
-    fn test_piece_content_is_empty() {
-        let empty_piece = PieceContent::new(
+    fn test_persistent_cache_piece_content_is_empty() {
+        let empty_persistent_cache_piece = PersistentCachePieceContent::new(
             0,
             0,
             0,
@@ -687,7 +702,7 @@ mod tests {
             DateTime::from_timestamp(1693152000, 0).unwrap().naive_utc(),
         );
 
-        let non_empty_piece = PieceContent::new(
+        let non_empty_persistent_cache_piece = PersistentCachePieceContent::new(
             1,
             0,
             100,
@@ -698,15 +713,15 @@ mod tests {
             DateTime::from_timestamp(1693152000, 0).unwrap().naive_utc(),
         );
 
-        assert!(empty_piece.is_empty());
-        assert!(!non_empty_piece.is_empty());
+        assert!(empty_persistent_cache_piece.is_empty());
+        assert!(!non_empty_persistent_cache_piece.is_empty());
     }
 
     #[test]
-    fn test_piece_metadata_conversion_roundtrip() {
+    fn test_persistent_cache_piece_metadata_conversion_roundtrip() {
         let metadata = create_test_metadata();
         let (bytes, length) = <(Bytes, u32)>::from(metadata.clone());
-        let result = PieceMetadata::try_from((bytes, length)).unwrap();
+        let result = PersistentCachePieceMetadata::try_from((bytes, length)).unwrap();
 
         assert_eq!(result.number, metadata.number);
         assert_eq!(result.offset, metadata.offset);
@@ -719,26 +734,26 @@ mod tests {
     }
 
     #[test]
-    fn test_piece_metadata_try_from_invalid_length() {
+    fn test_persistent_cache_piece_metadata_try_from_invalid_length() {
         let metadata = create_test_metadata();
         let (bytes, correct_length) = <(Bytes, u32)>::from(metadata);
         let wrong_length = correct_length + 10;
-        let result = PieceMetadata::try_from((bytes, wrong_length));
+        let result = PersistentCachePieceMetadata::try_from((bytes, wrong_length));
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), Error::InvalidLength(_)));
     }
 
     #[test]
-    fn test_piece_metadata_try_from_too_short_bytes() {
+    fn test_persistent_cache_piece_metadata_try_from_too_short_bytes() {
         let short_bytes = Bytes::from(vec![0u8; 10]);
-        let result = PieceMetadata::try_from((short_bytes, 10));
+        let result = PersistentCachePieceMetadata::try_from((short_bytes, 10));
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_piece_metadata_with_empty_parent_id() {
-        let metadata = PieceMetadata {
+    fn test_persistent_cache_piece_metadata_with_empty_parent_id() {
+        let metadata = PersistentCachePieceMetadata {
             number: 1,
             offset: 0,
             length: 100,
@@ -750,7 +765,7 @@ mod tests {
         };
 
         let (bytes, length) = <(Bytes, u32)>::from(metadata.clone());
-        let result = PieceMetadata::try_from((bytes, length)).unwrap();
+        let result = PersistentCachePieceMetadata::try_from((bytes, length)).unwrap();
 
         assert_eq!(result.parent_id, "");
         assert_eq!(result.number, 1);
@@ -758,9 +773,9 @@ mod tests {
     }
 
     #[test]
-    fn test_piece_metadata_with_long_parent_id() {
+    fn test_persistent_cache_piece_metadata_with_long_parent_id() {
         let long_parent_id = "x".repeat(1000); // Very long parent_id
-        let metadata = PieceMetadata {
+        let metadata = PersistentCachePieceMetadata {
             number: 999,
             offset: 12345,
             length: 67890,
@@ -772,7 +787,7 @@ mod tests {
         };
 
         let (bytes, length) = <(Bytes, u32)>::from(metadata.clone());
-        let result = PieceMetadata::try_from((bytes, length)).unwrap();
+        let result = PersistentCachePieceMetadata::try_from((bytes, length)).unwrap();
 
         assert_eq!(result.parent_id, long_parent_id);
         assert_eq!(result.number, 999);
@@ -780,8 +795,8 @@ mod tests {
     }
 
     #[test]
-    fn test_piece_metadata_with_zero_cost() {
-        let metadata = PieceMetadata {
+    fn test_persistent_cache_piece_metadata_with_zero_cost() {
+        let metadata = PersistentCachePieceMetadata {
             number: 0,
             offset: 0,
             length: 0,
@@ -793,15 +808,15 @@ mod tests {
         };
 
         let (bytes, length) = <(Bytes, u32)>::from(metadata.clone());
-        let result = PieceMetadata::try_from((bytes, length)).unwrap();
+        let result = PersistentCachePieceMetadata::try_from((bytes, length)).unwrap();
 
         assert_eq!(result.cost, Duration::from_secs(0));
         assert_eq!(result.parent_id, "zero_cost_test");
     }
 
     #[test]
-    fn test_piece_metadata_with_max_values() {
-        let metadata = PieceMetadata {
+    fn test_persistent_cache_piece_metadata_with_max_values() {
+        let metadata = PersistentCachePieceMetadata {
             number: u32::MAX,
             offset: u64::MAX,
             length: u64::MAX,
@@ -813,7 +828,7 @@ mod tests {
         };
 
         let (bytes, length) = <(Bytes, u32)>::from(metadata.clone());
-        let result = PieceMetadata::try_from((bytes, length)).unwrap();
+        let result = PersistentCachePieceMetadata::try_from((bytes, length)).unwrap();
 
         assert_eq!(result.number, u32::MAX);
         assert_eq!(result.offset, u64::MAX);
@@ -823,8 +838,8 @@ mod tests {
     }
 
     #[test]
-    fn test_piece_metadata_invalid_utf8_in_digest() {
-        let metadata_with_short_digest = PieceMetadata {
+    fn test_persistent_cache_piece_metadata_invalid_utf8_in_digest() {
+        let metadata_with_short_digest = PersistentCachePieceMetadata {
             number: 1,
             offset: 0,
             length: 100,
@@ -836,7 +851,7 @@ mod tests {
         };
 
         let (bytes, length) = <(Bytes, u32)>::from(metadata_with_short_digest);
-        let result = PieceMetadata::try_from((bytes, length));
+        let result = PersistentCachePieceMetadata::try_from((bytes, length));
         assert!(result.is_ok());
     }
 }
