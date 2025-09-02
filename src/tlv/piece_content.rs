@@ -158,6 +158,7 @@ impl TryFrom<Bytes> for PieceContent {
             metadata_length,
         )
             .try_into()?;
+
         Ok(PieceContent {
             metadata_length,
             metadata,
