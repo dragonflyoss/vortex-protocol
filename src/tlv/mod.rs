@@ -25,15 +25,15 @@ pub mod piece_content;
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tag {
-    /// Download the content of a piece from a peer. It is composed of `{Task ID}-{Piece ID}`,
-    /// where the Task ID is a 32-byte SHA-256 value and the Piece ID is a number.
+    /// Download the content of a piece from a peer. It is composed of `{Task ID}{Piece ID}`,
+    /// where the Task ID is a SHA-256 value and the Piece ID is a number.
     DownloadPiece = 0,
 
     /// The content of a piece, with a maximum size of 4 GiB per piece.
     PieceContent = 1,
 
-    /// Download the content of a persistent cache piece from a peer. It is composed of `{Task ID}-{Piece ID}`,
-    /// where the Task ID is a 32-byte SHA-256 value and the Piece ID is a number.
+    /// Download the content of a persistent cache piece from a peer. It is composed of `{Task ID}{Piece ID}`,
+    /// where the Task ID is a SHA-256 value and the Piece ID is a number.
     DownloadPersistentCachePiece = 2,
 
     /// The content of a persistent cache piece, with a maximum size of 4 GiB per piece.
