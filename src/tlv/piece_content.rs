@@ -50,16 +50,16 @@ const CREATED_AT_SIZE: usize = 8;
 /// PieceContent represents a piece metadata and piece content request.
 ///
 /// Value Format:
-///   - Metadata Length (8 bytes): Length of the metadata section.
+///   - Metadata Length (4 bytes): Length of the metadata section.
 ///   - Number (4 bytes): Piece number to download.
 ///   - Offset (8 bytes): Byte offset in the file.
 ///   - Length (8 bytes): Length of the piece in bytes.
-///   - Digest Length (8 bytes): Length of the digest field (fixed at 32 bytes).
-///   - Digest (32 bytes): CRC32 hash of the piece content.
-///   - Parent ID Length (8 bytes): Length of the parent task identifier.
+///   - Digest Length (4 bytes): Length of the digest field.
+///   - Digest (variable): CRC32 hash of the piece content.
+///   - Parent ID Length (4 bytes): Length of the parent task identifier.
 ///   - Parent ID (variable): Parent task identifier.
 ///   - Traffic Type (1 byte): Network traffic classification type.
-///   - Cost (64 bytes): Download cost in seconds.
+///   - Cost (8 bytes): Download cost in seconds.
 ///   - Created At (8 bytes): Creation timestamp as Unix epoch seconds.
 ///   - Content (variable): Piece content bytes.
 ///
@@ -67,7 +67,7 @@ const CREATED_AT_SIZE: usize = 8;
 /// -------------------------------------------------------------------------------------------------------------------------------------
 /// | Metadata Length (4 bytes) | Number (4 bytes) |  Offset (8 bytes) |  Length (8 bytes) | Digest Length(8 bytes) | Digest (variable) |
 /// ------------------------------------------------------------------------------------------------------------------------------------------
-/// | Parent ID Length(8 bytes) | Parent ID (variable) | Traffic Type (1 byte) | Cost (8 bytes) | Created At (8 bytes) |  Content (variable) |
+/// | Parent ID Length(4 bytes) | Parent ID (variable) | Traffic Type (1 byte) | Cost (8 bytes) | Created At (8 bytes) |  Content (variable) |
 /// ------------------------------------------------------------------------------------------------------------------------------------------
 /// ```
 #[derive(Debug, Clone)]
