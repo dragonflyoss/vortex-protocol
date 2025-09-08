@@ -49,6 +49,6 @@ jobs:
           config: '.markdownlint.yml'
           args: '**/*.md'
 
-      - uses: crate-ci/typos@65f69f021b736bdbe548ce72200500752d42b40e
+      - uses: crate-ci/typos@85f62a8a84f939ae994ab3763f01a0296d61a7ee
         with:
           config: .typos.toml
