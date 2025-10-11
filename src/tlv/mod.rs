@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+pub mod cache_piece_content;
 pub mod close;
+pub mod download_cache_piece;
 pub mod download_persistent_cache_piece;
 pub mod download_piece;
 pub mod error;
@@ -39,7 +41,14 @@ pub enum Tag {
     /// The content of a persistent cache piece, with a maximum size of 4 GiB per piece.
     PersistentCachePieceContent = 3,
 
-    /// Reserved for future use, for tags 4-254.
+    /// Download the content of a cache piece from a peer. It is composed of `{Task ID}{Piece ID}`,
+    /// where the Task ID is a SHA-256 value and the Piece ID is a number.
+    DownloadCachePiece = 4,
+
+    /// The content of a cache piece, with a maximum size of 4 GiB per piece.
+    CachePieceContent = 5,
+
+    /// Reserved for future use, for tags 6-254.
     Reserved(u8),
 
     /// Close the connection. If server or client receives this tag, it will close the connection.
@@ -58,7 +67,9 @@ impl From<u8> for Tag {
             1 => Tag::PieceContent,
             2 => Tag::DownloadPersistentCachePiece,
             3 => Tag::PersistentCachePieceContent,
-            4..=253 => Tag::Reserved(value),
+            4 => Tag::DownloadCachePiece,
+            5 => Tag::CachePieceContent,
+            6..=253 => Tag::Reserved(value),
             254 => Tag::Close,
             255 => Tag::Error,
         }
@@ -74,6 +85,8 @@ impl From<Tag> for u8 {
             Tag::PieceContent => 1,
             Tag::DownloadPersistentCachePiece => 2,
             Tag::PersistentCachePieceContent => 3,
+            Tag::DownloadCachePiece => 4,
+            Tag::CachePieceContent => 5,
             Tag::Reserved(value) => value,
             Tag::Close => 254,
             Tag::Error => 255,
@@ -91,7 +104,9 @@ mod tests {
         assert_eq!(Tag::from(1), Tag::PieceContent);
         assert_eq!(Tag::from(2), Tag::DownloadPersistentCachePiece);
         assert_eq!(Tag::from(3), Tag::PersistentCachePieceContent);
-        assert_eq!(Tag::from(4), Tag::Reserved(4));
+        assert_eq!(Tag::from(4), Tag::DownloadCachePiece);
+        assert_eq!(Tag::from(5), Tag::CachePieceContent);
+        assert_eq!(Tag::from(6), Tag::Reserved(6));
         assert_eq!(Tag::from(253), Tag::Reserved(253));
         assert_eq!(Tag::from(254), Tag::Close);
         assert_eq!(Tag::from(255), Tag::Error);
@@ -103,7 +118,9 @@ mod tests {
         assert_eq!(u8::from(Tag::PieceContent), 1);
         assert_eq!(u8::from(Tag::DownloadPersistentCachePiece), 2);
         assert_eq!(u8::from(Tag::PersistentCachePieceContent), 3);
-        assert_eq!(u8::from(Tag::Reserved(4)), 4);
+        assert_eq!(u8::from(Tag::DownloadCachePiece), 4);
+        assert_eq!(u8::from(Tag::CachePieceContent), 5);
+        assert_eq!(u8::from(Tag::Reserved(6)), 6);
         assert_eq!(u8::from(Tag::Reserved(253)), 253);
         assert_eq!(u8::from(Tag::Close), 254);
         assert_eq!(u8::from(Tag::Error), 255);

@@ -18,6 +18,8 @@ use bytes::Bytes;
 use chrono::Utc;
 use std::time::Duration;
 use vortex_protocol::error::{Error, Result};
+use vortex_protocol::tlv::cache_piece_content::CachePieceContent;
+use vortex_protocol::tlv::download_cache_piece::DownloadCachePiece;
 use vortex_protocol::tlv::download_persistent_cache_piece::DownloadPersistentCachePiece;
 use vortex_protocol::tlv::download_piece::DownloadPiece;
 use vortex_protocol::tlv::persistent_cache_piece_content::PersistentCachePieceContent;
@@ -72,6 +74,27 @@ pub fn handle_packet(bytes: Bytes) -> Result<Vortex> {
                 header,
                 persistent_cache_piece_content,
             ))
+        }
+        Vortex::DownloadCachePiece(_header, download_cache_piece) => {
+            let content = "cache piece content".as_bytes();
+            let cache_piece_content = CachePieceContent::new(
+                download_cache_piece.piece_number(),
+                1,
+                content.len() as u64,
+                "crc32:864bbb04".to_string(),
+                "127.0.0.1-foo".to_string(),
+                1,
+                Duration::from_secs(30),
+                Utc::now().naive_utc(),
+            );
+
+            let cache_piece_content_bytes: Bytes = cache_piece_content.clone().into();
+            let header = Header::new(
+                Tag::CachePieceContent,
+                (cache_piece_content_bytes.len() + content.len()) as u32,
+            );
+
+            Ok(Vortex::CachePieceContent(header, cache_piece_content))
         }
         _ => Err(Error::InvalidPacket("unexpected tag".to_string())),
     }
@@ -129,5 +152,28 @@ fn test_persistent_cache_piece_download_flow() {
             assert_eq!(persistent_cache_piece_content.metadata_len(), 72);
         }
         _ => panic!("expected PersistentCachePieceContent packet"),
+    }
+}
+
+#[test]
+fn test_cache_piece_download_flow() {
+    let download_cache_piece_packet = Vortex::DownloadCachePiece(
+        Header::new_download_cache_piece(),
+        DownloadCachePiece::new("a".repeat(64), 1),
+    );
+
+    match handle_packet(download_cache_piece_packet.into()).unwrap() {
+        Vortex::CachePieceContent(_header, cache_piece_content) => {
+            assert_eq!(cache_piece_content.metadata().number, 1);
+            assert_eq!(cache_piece_content.metadata().offset, 1);
+            assert_eq!(cache_piece_content.metadata().length, 19);
+            assert_eq!(cache_piece_content.metadata().digest, "crc32:864bbb04");
+            assert_eq!(cache_piece_content.metadata().parent_id, "127.0.0.1-foo");
+            assert_eq!(cache_piece_content.metadata().traffic_type, 1);
+            assert_eq!(cache_piece_content.metadata().cost, Duration::from_secs(30));
+            assert!(cache_piece_content.metadata().created_at <= Utc::now().naive_utc());
+            assert_eq!(cache_piece_content.metadata_len(), 72);
+        }
+        _ => panic!("expected CachePieceContent packet"),
     }
 }

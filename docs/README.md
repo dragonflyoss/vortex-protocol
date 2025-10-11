@@ -21,7 +21,9 @@ scalable file sharing capabilities.
 | 1     | Piece Content                   | The content of a piece, with a maximum size of 1 GiB per piece.                                                                                                           |
 | 2     | Download Persistent Cache Piece | Download the content of a persistent cache piece from a peer. It is composed of `{Task ID}{Piece ID}`, where the Task ID is a SHA-256 value and the Piece ID is a number. |
 | 3     | Persistent Cache Piece Content  | The content of a persistent cache piece, with a maximum size of 1 GiB per piece.                                                                                          |
-| 4-253 | Reserved                        | Reserved for future use.                                                                                                                                                  |
+| 4     | Download Cache Piece            | Download the content of a cache piece from a peer. It is composed of `{Task ID}{Piece ID}`, where the Task ID is a SHA-256 value and the Piece ID is a number. |
+| 5     | Cache Piece Content             | The content of a cache piece, with a maximum size of 1 GiB per piece.                                                                                          |
+| 6-253 | Reserved                        | Reserved for future use.                                                                                                                                                  |
 | 254   | Close                           | Close connection.                                                                                                                                                         |
 | 255   | Error                           | Error message.                                                                                                                                                            |
 
@@ -44,9 +46,11 @@ scalable file sharing capabilities.
 - **Piece Content (Tag=0x01):** Raw piece data or piece fragments.
 - **Download Persistent Cache Piece (Tag=0x02):** Download the content of a persistent cache piece from a peer.
 - **Persistent Cache Piece Content (Tag=0x03):** Raw persistent cache piece data or persistent cache piece fragments.
+- **Download Cache Piece (Tag=0x04):** Download the content of a cache piece from a peer.
+- **Cache Piece Content (Tag=0x05):** Raw cache piece data or cache piece fragments.
 - **Error (Tag=0xFF):** Conveys error.
 - **Close (Tag=0xFE):** Indicates the end of a connection.
-- **Reserved Tags:** Tags 4-253 may be allocated for metadata, compression, encryption, or future protocol extensions.
+- **Reserved Tags:** Tags 6-253 may be allocated for metadata, compression, encryption, or future protocol extensions.
 
 ## Example
 
