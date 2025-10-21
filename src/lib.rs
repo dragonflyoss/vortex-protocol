@@ -59,6 +59,17 @@ impl Header {
         }
     }
 
+    /// new_download_cache_piece creates a new Vortex packet header for download cache piece request.
+    pub fn new_download_cache_piece() -> Self {
+        let mut rng = thread_rng();
+        Self {
+            id: rng.gen(),
+            tag: tlv::Tag::DownloadCachePiece,
+            length: (tlv::download_cache_piece::TASK_ID_SIZE
+                + tlv::download_cache_piece::PIECE_NUMBER_SIZE) as u32,
+        }
+    }
+
     /// new_download_persistent_cache_piece creates a new Vortex packet header for download persistent cache piece request.
     pub fn new_download_persistent_cache_piece() -> Self {
         let mut rng = thread_rng();
@@ -87,6 +98,16 @@ impl Header {
         Self {
             id: rng.gen(),
             tag: tlv::Tag::PieceContent,
+            length: value_length,
+        }
+    }
+
+    /// new_cache_piece_content creates a new Vortex packet header for cache piece content.
+    pub fn new_cache_piece_content(value_length: u32) -> Self {
+        let mut rng = thread_rng();
+        Self {
+            id: rng.gen(),
+            tag: tlv::Tag::CachePieceContent,
             length: value_length,
         }
     }
@@ -205,6 +226,8 @@ impl From<Header> for Bytes {
 pub enum Vortex {
     DownloadPiece(Header, tlv::download_piece::DownloadPiece),
     PieceContent(Header, tlv::piece_content::PieceContent),
+    DownloadCachePiece(Header, tlv::download_cache_piece::DownloadCachePiece),
+    CachePieceContent(Header, tlv::cache_piece_content::CachePieceContent),
     DownloadPersistentCachePiece(
         Header,
         tlv::download_persistent_cache_piece::DownloadPersistentCachePiece,
@@ -231,6 +254,8 @@ impl Vortex {
         match self {
             Vortex::DownloadPiece(header, _) => header.id,
             Vortex::PieceContent(header, _) => header.id,
+            Vortex::DownloadCachePiece(header, _) => header.id,
+            Vortex::CachePieceContent(header, _) => header.id,
             Vortex::DownloadPersistentCachePiece(header, _) => header.id,
             Vortex::PersistentCachePieceContent(header, _) => header.id,
             Vortex::Reserved(header) => header.id,
@@ -245,6 +270,8 @@ impl Vortex {
         match self {
             Vortex::DownloadPiece(header, _) => header.tag,
             Vortex::PieceContent(header, _) => header.tag,
+            Vortex::DownloadCachePiece(header, _) => header.tag,
+            Vortex::CachePieceContent(header, _) => header.tag,
             Vortex::DownloadPersistentCachePiece(header, _) => header.tag,
             Vortex::PersistentCachePieceContent(header, _) => header.tag,
             Vortex::Reserved(header) => header.tag,
@@ -259,6 +286,8 @@ impl Vortex {
         match self {
             Vortex::DownloadPiece(header, _) => header.length as usize,
             Vortex::PieceContent(header, _) => header.length as usize,
+            Vortex::DownloadCachePiece(header, _) => header.length as usize,
+            Vortex::CachePieceContent(header, _) => header.length as usize,
             Vortex::DownloadPersistentCachePiece(header, _) => header.length as usize,
             Vortex::PersistentCachePieceContent(header, _) => header.length as usize,
             Vortex::Reserved(header) => header.length as usize,
@@ -273,6 +302,8 @@ impl Vortex {
         match self {
             Vortex::DownloadPiece(header, _) => header,
             Vortex::PieceContent(header, _) => header,
+            Vortex::DownloadCachePiece(header, _) => header,
+            Vortex::CachePieceContent(header, _) => header,
             Vortex::DownloadPersistentCachePiece(header, _) => header,
             Vortex::PersistentCachePieceContent(header, _) => header,
             Vortex::Reserved(header) => header,
@@ -312,6 +343,9 @@ impl From<Vortex> for Bytes {
     fn from(packet: Vortex) -> Self {
         let (header, value) = match packet {
             Vortex::DownloadPiece(header, download_piece) => (header, download_piece.into()),
+            Vortex::DownloadCachePiece(header, download_cache_piece) => {
+                (header, download_cache_piece.into())
+            }
             Vortex::DownloadPersistentCachePiece(header, download_persistent_cache_piece) => {
                 (header, download_persistent_cache_piece.into())
             }
@@ -348,6 +382,11 @@ impl TryFrom<(tlv::Tag, Header, Bytes)> for Vortex {
             tlv::Tag::DownloadPiece => {
                 let download_piece = tlv::download_piece::DownloadPiece::try_from(value)?;
                 Ok(Vortex::DownloadPiece(header, download_piece))
+            }
+            tlv::Tag::DownloadCachePiece => {
+                let download_cache_piece =
+                    tlv::download_cache_piece::DownloadCachePiece::try_from(value)?;
+                Ok(Vortex::DownloadCachePiece(header, download_cache_piece))
             }
             tlv::Tag::DownloadPersistentCachePiece => {
                 let download_persistent_cache_piece =
@@ -496,6 +535,18 @@ mod tests {
     #[test]
     fn test_vortex_to_bytes_download_piece() {
         let tag = Tag::DownloadPiece;
+        let mut value = BytesMut::with_capacity(68);
+        value.extend_from_slice("a".repeat(64).as_bytes());
+        value.put_u32(42);
+        let packet = Vortex::new(tag, value.clone().freeze()).unwrap();
+        let bytes: Bytes = packet.into();
+
+        assert_eq!(bytes.len(), HEADER_SIZE + value.len());
+    }
+
+    #[test]
+    fn test_vortex_to_bytes_download_cache_piece() {
+        let tag = Tag::DownloadCachePiece;
         let mut value = BytesMut::with_capacity(68);
         value.extend_from_slice("a".repeat(64).as_bytes());
         value.put_u32(42);
