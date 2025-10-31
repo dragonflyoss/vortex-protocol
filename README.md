@@ -1,7 +1,7 @@
 # Vortex Protocol
 
 [![LICENSE](https://img.shields.io/github/license/dragonflyoss/vortex-protocol.svg?style=flat-square)](https://github.com/dragonflyoss/vortex-protocol/blob/main/LICENSE)
-[![Discussions](https://img.shields.io/badge/discussions-on%20github-blue?style=flat-square)](https://github.com/dragonflyoss/vortex-protocol/discussions)
+[![Discussions](https://img.shields.io/badge/discussions-on%20github-blue?style=flat-square)](https://github.com/dragonflyoss/dragonfly/discussions)
 
 ## Introduction
 
