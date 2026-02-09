@@ -18,7 +18,7 @@ chrono = { version = "0.4.43", features = ["serde", "clock"] }
 
 [dev-dependencies]
 criterion = "0.5"
-proptest = "1.9"
+proptest = "1.10"
 
 [[bench]]
 name = "vortex"
