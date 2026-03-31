@@ -20,7 +20,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 /// CODE_SIZE is the size of the error code in bytes.
 const CODE_SIZE: usize = 1;
 
-/// Code represents a error code.
+/// Code represents an error code.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Code {
@@ -70,7 +70,7 @@ impl From<Code> for u8 {
     }
 }
 
-/// Error represents a error request.
+/// Error represents an error request.
 ///
 /// Value Format:
 ///  - Error Code (1 bytes): Error code.
