@@ -54,7 +54,7 @@ scalable file sharing capabilities.
 - **Cache Piece Content (Tag=0x07):** Raw cache piece data or cache piece fragments.
 - **Error (Tag=0xFF):** Conveys error.
 - **Close (Tag=0xFE):** Indicates the end of a connection.
-- **Reserved Tags:** Tags 6-253 may be allocated for metadata, compression, encryption, or future protocol extensions.
+- **Reserved Tags:** Tags 8-253 may be allocated for metadata, compression, encryption, or future protocol extensions.
 
 ## Example
 
