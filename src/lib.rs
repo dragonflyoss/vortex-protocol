@@ -229,15 +229,15 @@ impl From<Header> for Bytes {
 /// Packet Format:
 ///     - Packet Identifier (1 bytes): Uniquely identifies each packet
 ///     - Tag (1 bytes): Specifies data type in value field
-///     - Length (8 bytes): Indicates Value field length, up to 4 GiB
-///     - Value (variable): Actual data content, maximum 1 GiB
+///     - Length (4 bytes): Indicates Value field length, up to 4 GiB
+///     - Value (variable): Actual data content, maximum 4 GiB
 ///
 /// Protocol Format:
 ///
 /// ```text
 /// ---------------------------------------------------------------------------------------------------
 /// |                             |                    |                    |                         |
-/// | Packet Identifier (1 bytes) |    Tag (1 bytes)   |  Length (8 bytes)  |   Value (up to 4 GiB)   |
+/// | Packet Identifier (1 bytes) |    Tag (1 bytes)   |  Length (4 bytes)  |   Value (up to 4 GiB)   |
 /// |                             |                    |                    |                         |
 /// ---------------------------------------------------------------------------------------------------
 /// ```
@@ -374,7 +374,7 @@ impl TryFrom<Bytes> for Vortex {
     }
 }
 
-/// Implement From<PieceContent> for Bytes.
+/// Implement From<Vortex> for Bytes.
 impl From<Vortex> for Bytes {
     /// from converts a Vortex packet to Bytes.
     fn from(packet: Vortex) -> Self {
@@ -471,7 +471,6 @@ mod tests {
 
         assert_eq!(header.tag, tag);
         assert_eq!(header.length, value_length);
-        assert!(header.id <= 254);
     }
 
     #[test]

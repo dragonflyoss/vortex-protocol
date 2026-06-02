@@ -57,7 +57,7 @@ pub enum Tag {
     /// The content of a cache piece, with a maximum size of 4 GiB per piece.
     CachePieceContent = 7,
 
-    /// Reserved for future use, for tags 6-254.
+    /// Reserved for future use, for tags 8-253.
     Reserved(u8),
 
     /// Close the connection. If server or client receives this tag, it will close the connection.
