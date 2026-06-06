@@ -380,19 +380,28 @@ impl From<Vortex> for Bytes {
     fn from(packet: Vortex) -> Self {
         let (header, value) = match packet {
             Vortex::DownloadPiece(header, download_piece) => (header, download_piece.into()),
+            Vortex::PieceContent(header, piece_content) => (header, piece_content.into()),
             Vortex::DownloadCachePiece(header, download_cache_piece) => {
                 (header, download_cache_piece.into())
+            }
+            Vortex::CachePieceContent(header, cache_piece_content) => {
+                (header, cache_piece_content.into())
             }
             Vortex::DownloadPersistentPiece(header, download_persistent_piece) => {
                 (header, download_persistent_piece.into())
             }
+            Vortex::PersistentPieceContent(header, persistent_piece_content) => {
+                (header, persistent_piece_content.into())
+            }
             Vortex::DownloadPersistentCachePiece(header, download_persistent_cache_piece) => {
                 (header, download_persistent_cache_piece.into())
+            }
+            Vortex::PersistentCachePieceContent(header, persistent_cache_piece_content) => {
+                (header, persistent_cache_piece_content.into())
             }
             Vortex::Reserved(header) => (header, Bytes::new()),
             Vortex::Close(header) => (header, Bytes::new()),
             Vortex::Error(header, err) => (header, err.into()),
-            _ => panic!("unsupported packet type for conversion to Bytes"),
         };
 
         let mut bytes = BytesMut::with_capacity(HEADER_SIZE + value.len());
@@ -428,12 +437,24 @@ impl TryFrom<(tlv::Tag, Header, Bytes)> for Vortex {
                     tlv::download_cache_piece::DownloadCachePiece::try_from(value)?;
                 Ok(Vortex::DownloadCachePiece(header, download_cache_piece))
             }
+            tlv::Tag::PieceContent => {
+                let piece_content = tlv::piece_content::PieceContent::try_from(value)?;
+                Ok(Vortex::PieceContent(header, piece_content))
+            }
             tlv::Tag::DownloadPersistentPiece => {
                 let download_persistent_piece =
                     tlv::download_persistent_piece::DownloadPersistentPiece::try_from(value)?;
                 Ok(Vortex::DownloadPersistentPiece(
                     header,
                     download_persistent_piece,
+                ))
+            }
+            tlv::Tag::PersistentPieceContent => {
+                let persistent_piece_content =
+                    tlv::persistent_piece_content::PersistentPieceContent::try_from(value)?;
+                Ok(Vortex::PersistentPieceContent(
+                    header,
+                    persistent_piece_content,
                 ))
             }
             tlv::Tag::DownloadPersistentCachePiece => {
@@ -446,13 +467,27 @@ impl TryFrom<(tlv::Tag, Header, Bytes)> for Vortex {
                     download_persistent_cache_piece,
                 ))
             }
+            tlv::Tag::PersistentCachePieceContent => {
+                let persistent_cache_piece_content =
+                    tlv::persistent_cache_piece_content::PersistentCachePieceContent::try_from(
+                        value,
+                    )?;
+                Ok(Vortex::PersistentCachePieceContent(
+                    header,
+                    persistent_cache_piece_content,
+                ))
+            }
+            tlv::Tag::CachePieceContent => {
+                let cache_piece_content =
+                    tlv::cache_piece_content::CachePieceContent::try_from(value)?;
+                Ok(Vortex::CachePieceContent(header, cache_piece_content))
+            }
             tlv::Tag::Reserved(_) => Ok(Vortex::Reserved(header)),
             tlv::Tag::Close => Ok(Vortex::Close(header)),
             tlv::Tag::Error => {
                 let err = tlv::error::Error::try_from(value)?;
                 Ok(Vortex::Error(header, err))
             }
-            _ => panic!("unsupported tag for Vortex packet"),
         }
     }
 }
@@ -653,6 +688,121 @@ mod tests {
         let bytes: Bytes = packet.into();
 
         assert_eq!(bytes.len(), HEADER_SIZE + value.len());
+    }
+
+    #[test]
+    fn test_vortex_piece_content_roundtrip() {
+        let content = tlv::piece_content::PieceContent::new(
+            1,
+            2,
+            3,
+            "crc32:864bbb04".to_string(),
+            "127.0.0.1-foo".to_string(),
+            1,
+            std::time::Duration::from_secs(30),
+            chrono::Utc::now().naive_utc(),
+        );
+        let value: Bytes = content.clone().into();
+        let packet = Vortex::PieceContent(Header::new_piece_content(value.len() as u32), content);
+        let bytes: Bytes = packet.into();
+        let decoded = Vortex::try_from(bytes).unwrap();
+
+        match decoded {
+            Vortex::PieceContent(header, decoded_content) => {
+                assert_eq!(header.tag(), Tag::PieceContent);
+                assert_eq!(header.length(), value.len() as u32);
+                assert_eq!(decoded_content.metadata_len(), value.len() as u32 - 4);
+            }
+            _ => panic!("expected PieceContent packet"),
+        }
+    }
+
+    #[test]
+    fn test_vortex_cache_piece_content_roundtrip() {
+        let content = tlv::cache_piece_content::CachePieceContent::new(
+            1,
+            2,
+            3,
+            "crc32:864bbb04".to_string(),
+            "127.0.0.1-foo".to_string(),
+            1,
+            std::time::Duration::from_secs(30),
+            chrono::Utc::now().naive_utc(),
+        );
+        let value: Bytes = content.clone().into();
+        let packet =
+            Vortex::CachePieceContent(Header::new_cache_piece_content(value.len() as u32), content);
+        let bytes: Bytes = packet.into();
+        let decoded = Vortex::try_from(bytes).unwrap();
+
+        match decoded {
+            Vortex::CachePieceContent(header, decoded_content) => {
+                assert_eq!(header.tag(), Tag::CachePieceContent);
+                assert_eq!(header.length(), value.len() as u32);
+                assert_eq!(decoded_content.metadata_len(), value.len() as u32 - 4);
+            }
+            _ => panic!("expected CachePieceContent packet"),
+        }
+    }
+
+    #[test]
+    fn test_vortex_persistent_piece_content_roundtrip() {
+        let content = tlv::persistent_piece_content::PersistentPieceContent::new(
+            1,
+            2,
+            3,
+            "crc32:864bbb04".to_string(),
+            "127.0.0.1-foo".to_string(),
+            1,
+            std::time::Duration::from_secs(30),
+            chrono::Utc::now().naive_utc(),
+        );
+        let value: Bytes = content.clone().into();
+        let packet = Vortex::PersistentPieceContent(
+            Header::new_persistent_piece_content(value.len() as u32),
+            content,
+        );
+        let bytes: Bytes = packet.into();
+        let decoded = Vortex::try_from(bytes).unwrap();
+
+        match decoded {
+            Vortex::PersistentPieceContent(header, decoded_content) => {
+                assert_eq!(header.tag(), Tag::PersistentPieceContent);
+                assert_eq!(header.length(), value.len() as u32);
+                assert_eq!(decoded_content.metadata_len(), value.len() as u32 - 4);
+            }
+            _ => panic!("expected PersistentPieceContent packet"),
+        }
+    }
+
+    #[test]
+    fn test_vortex_persistent_cache_piece_content_roundtrip() {
+        let content = tlv::persistent_cache_piece_content::PersistentCachePieceContent::new(
+            1,
+            2,
+            3,
+            "crc32:864bbb04".to_string(),
+            "127.0.0.1-foo".to_string(),
+            1,
+            std::time::Duration::from_secs(30),
+            chrono::Utc::now().naive_utc(),
+        );
+        let value: Bytes = content.clone().into();
+        let packet = Vortex::PersistentCachePieceContent(
+            Header::new_persistent_cache_piece_content(value.len() as u32),
+            content,
+        );
+        let bytes: Bytes = packet.into();
+        let decoded = Vortex::try_from(bytes).unwrap();
+
+        match decoded {
+            Vortex::PersistentCachePieceContent(header, decoded_content) => {
+                assert_eq!(header.tag(), Tag::PersistentCachePieceContent);
+                assert_eq!(header.length(), value.len() as u32);
+                assert_eq!(decoded_content.metadata_len(), value.len() as u32 - 4);
+            }
+            _ => panic!("expected PersistentCachePieceContent packet"),
+        }
     }
 
     #[test]
