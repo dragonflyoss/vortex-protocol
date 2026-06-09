@@ -3,4 +3,4 @@ MD010: false
 MD013: false
 
 MD046:
-  style: "fenced"
+  style: 'fenced'
