@@ -356,6 +356,13 @@ impl TryFrom<Bytes> for Vortex {
 
     /// try_from converts a Bytes into a Vortex packet.
     fn try_from(bytes: Bytes) -> Result<Self> {
+        if bytes.len() < HEADER_SIZE {
+            return Err(Error::InvalidPacket(format!(
+                "expected at least {HEADER_SIZE} bytes for header, got {}",
+                bytes.len()
+            )));
+        }
+
         let mut bytes = BytesMut::from(bytes);
         let header = bytes.split_to(HEADER_SIZE);
         let value = bytes.freeze();
@@ -497,6 +504,7 @@ mod tests {
     use super::*;
     use crate::tlv::Tag;
     use bytes::Bytes;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
 
     #[test]
     fn test_header_new() {
@@ -612,6 +620,20 @@ mod tests {
         let result = Vortex::try_from(packet_bytes.freeze());
 
         assert!(matches!(result, Err(Error::InvalidLength(_))));
+    }
+
+    #[test]
+    fn test_vortex_try_from_bytes_short_header_returns_error() {
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            Vortex::try_from(Bytes::from_static(&[1, 2, 3]))
+        }));
+
+        assert!(result.is_ok(), "Vortex::try_from should not panic");
+        assert!(matches!(
+            result.unwrap(),
+            Err(Error::InvalidPacket(message))
+                if message == "expected at least 6 bytes for header, got 3"
+        ));
     }
 
     #[test]
