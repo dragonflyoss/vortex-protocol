@@ -490,7 +490,16 @@ impl TryFrom<(tlv::Tag, Header, Bytes)> for Vortex {
                 Ok(Vortex::CachePieceContent(header, cache_piece_content))
             }
             tlv::Tag::Reserved(_) => Ok(Vortex::Reserved(header)),
-            tlv::Tag::Close => Ok(Vortex::Close(header)),
+            tlv::Tag::Close => {
+                if !value.is_empty() {
+                    return Err(Error::InvalidLength(format!(
+                        "expected 0 bytes for Close, got {}",
+                        value.len()
+                    )));
+                }
+
+                Ok(Vortex::Close(header))
+            }
             tlv::Tag::Error => {
                 let err = tlv::error::Error::try_from(value)?;
                 Ok(Vortex::Error(header, err))
@@ -613,6 +622,24 @@ mod tests {
         };
         let header_bytes: Bytes = header.into();
         let value = Bytes::from("test");
+
+        let mut packet_bytes = BytesMut::new();
+        packet_bytes.extend_from_slice(&header_bytes);
+        packet_bytes.extend_from_slice(&value);
+        let result = Vortex::try_from(packet_bytes.freeze());
+
+        assert!(matches!(result, Err(Error::InvalidLength(_))));
+    }
+
+    #[test]
+    fn test_vortex_try_from_bytes_rejects_close_payload() {
+        let header = Header {
+            id: 1,
+            tag: Tag::Close,
+            length: 4,
+        };
+        let header_bytes: Bytes = header.into();
+        let value = Bytes::from_static(b"test");
 
         let mut packet_bytes = BytesMut::new();
         packet_bytes.extend_from_slice(&header_bytes);
