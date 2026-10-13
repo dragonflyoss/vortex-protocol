@@ -15,8 +15,11 @@
  */
 
 use crate::error::{Error, Result};
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut};
 use rand::prelude::*;
+use zerocopy::{
+    byteorder::network_endian::U32, FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned,
+};
 
 pub mod error;
 pub mod tlv;
@@ -27,6 +30,18 @@ pub const HEADER_SIZE: usize = 6;
 
 /// MAX_VALUE_SIZE is the maximum size of the value field (4 GiB).
 const MAX_VALUE_SIZE: usize = 4 * 1024 * 1024 * 1024;
+
+/// RawHeader is the on-wire layout of the Vortex packet header.
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C)]
+struct RawHeader {
+    id: u8,
+    tag: u8,
+    length: U32,
+}
+
+// Verify at compile time that the layout has no padding and matches HEADER_SIZE.
+const _: () = assert!(size_of::<RawHeader>() == HEADER_SIZE);
 
 /// Header represents the Vortex packet header.
 #[derive(Debug, Clone)]
@@ -169,43 +184,41 @@ impl Header {
     }
 }
 
+/// Implement From<&RawHeader> for Header.
+impl From<&RawHeader> for Header {
+    /// from converts the on-wire layout into a Header.
+    fn from(raw: &RawHeader) -> Self {
+        Header {
+            id: raw.id,
+            tag: raw.tag.into(),
+            length: raw.length.get(),
+        }
+    }
+}
+
+/// Implement From<&Header> for RawHeader.
+impl From<&Header> for RawHeader {
+    /// from converts a Header into the on-wire layout.
+    fn from(header: &Header) -> Self {
+        RawHeader {
+            id: header.id,
+            tag: header.tag.into(),
+            length: U32::new(header.length),
+        }
+    }
+}
+
 /// Implement TryFrom<Bytes> for Header.
 impl TryFrom<Bytes> for Header {
     type Error = Error;
 
     /// try_from converts a Bytes into a Header.
     fn try_from(bytes: Bytes) -> Result<Self> {
-        if bytes.len() != HEADER_SIZE {
-            return Err(Error::InvalidPacket(format!(
-                "expected min {HEADER_SIZE} bytes, got {}",
-                bytes.len()
-            )));
-        }
+        let raw = RawHeader::ref_from_bytes(&bytes).map_err(|_| {
+            Error::InvalidPacket(format!("expected {HEADER_SIZE} bytes, got {}", bytes.len()))
+        })?;
 
-        let id = bytes
-            .first()
-            .ok_or(Error::InvalidPacket(
-                "insufficient bytes for id".to_string(),
-            ))?
-            .to_owned();
-
-        let tag = bytes
-            .get(1)
-            .ok_or(Error::InvalidPacket(
-                "insufficient bytes for tag".to_string(),
-            ))?
-            .to_owned()
-            .into();
-
-        let length = u32::from_be_bytes(
-            bytes
-                .get(2..HEADER_SIZE)
-                .ok_or(Error::InvalidPacket(
-                    "insufficient bytes for length".to_string(),
-                ))?
-                .try_into()?,
-        );
-        Ok(Header { id, tag, length })
+        Ok(raw.into())
     }
 }
 
@@ -213,11 +226,7 @@ impl TryFrom<Bytes> for Header {
 impl From<Header> for Bytes {
     /// from converts a Header into Bytes.
     fn from(header: Header) -> Self {
-        let mut bytes = BytesMut::with_capacity(HEADER_SIZE);
-        bytes.put_u8(header.id);
-        bytes.put_u8(header.tag.into());
-        bytes.put_u32(header.length);
-        bytes.freeze()
+        Bytes::copy_from_slice(RawHeader::from(&header).as_bytes())
     }
 }
 
@@ -356,19 +365,15 @@ impl TryFrom<Bytes> for Vortex {
 
     /// try_from converts a Bytes into a Vortex packet.
     fn try_from(bytes: Bytes) -> Result<Self> {
-        if bytes.len() < HEADER_SIZE {
-            return Err(Error::InvalidPacket(format!(
+        let (raw, value) = RawHeader::ref_from_prefix(&bytes).map_err(|_| {
+            Error::InvalidPacket(format!(
                 "expected at least {HEADER_SIZE} bytes for header, got {}",
                 bytes.len()
-            )));
-        }
-
-        let mut bytes = BytesMut::from(bytes);
-        let header = bytes.split_to(HEADER_SIZE);
-        let value = bytes.freeze();
-        let header: Header = header.freeze().try_into()?;
+            ))
+        })?;
 
         // Check if the value length matches the specified length.
+        let header = Header::from(raw);
         if value.len() != header.length as usize {
             return Err(Error::InvalidLength(format!(
                 "value len {} != declared length {}",
@@ -377,7 +382,7 @@ impl TryFrom<Bytes> for Vortex {
             )));
         }
 
-        (header.tag, header, value).try_into()
+        (header.tag, header, bytes.slice(HEADER_SIZE..)).try_into()
     }
 }
 
@@ -411,10 +416,13 @@ impl From<Vortex> for Bytes {
             Vortex::Error(header, err) => (header, err.into()),
         };
 
+        let raw = RawHeader {
+            length: U32::new(value.len() as u32),
+            ..RawHeader::from(&header)
+        };
+
         let mut bytes = BytesMut::with_capacity(HEADER_SIZE + value.len());
-        bytes.put_u8(header.id);
-        bytes.put_u8(header.tag.into());
-        bytes.put_u32(value.len() as u32);
+        bytes.extend_from_slice(raw.as_bytes());
         bytes.extend_from_slice(&value);
         bytes.freeze()
     }
@@ -503,7 +511,7 @@ impl TryFrom<(tlv::Tag, Header, Bytes)> for Vortex {
 mod tests {
     use super::*;
     use crate::tlv::Tag;
-    use bytes::Bytes;
+    use bytes::{BufMut, Bytes};
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
     #[test]

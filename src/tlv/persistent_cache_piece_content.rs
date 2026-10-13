@@ -19,6 +19,10 @@ use bytes::{BufMut, Bytes, BytesMut};
 use chrono::{DateTime, NaiveDateTime};
 use std::convert::TryFrom;
 use std::time::Duration;
+use zerocopy::{
+    byteorder::network_endian::{I64, U32, U64},
+    FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned,
+};
 
 /// METADATA_LENGTH_SIZE is the size of the metadata length in bytes.
 pub const METADATA_LENGTH_SIZE: usize = 4;
@@ -46,6 +50,38 @@ const COST_SIZE: usize = 8;
 
 /// CREATED_AT_SIZE is the size of the created at in bytes.
 const CREATED_AT_SIZE: usize = 8;
+
+/// MetadataPrefix is the on-wire layout of the fixed fields preceding the digest.
+///
+/// The digest and parent ID are variable-length, so the fixed fields around them are
+/// described as a prefix and a suffix, with the parent ID length read as a bare integer
+/// in between.
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C)]
+struct MetadataPrefix {
+    number: U32,
+    offset: U64,
+    length: U64,
+    digest_length: U32,
+}
+
+/// MetadataSuffix is the on-wire layout of the fixed fields following the parent ID, see
+/// [MetadataPrefix] for why the layout is split.
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C)]
+struct MetadataSuffix {
+    traffic_type: u8,
+    cost: U64,
+    created_at: I64,
+}
+
+// Verify at compile time that the layouts have no padding and match the documented field
+// sizes.
+const _: () = assert!(
+    size_of::<MetadataPrefix>() == NUMBER_SIZE + OFFSET_SIZE + LENGTH_SIZE + DIGEST_LENGTH_SIZE
+);
+const _: () =
+    assert!(size_of::<MetadataSuffix>() == TRAFFIC_TYPE_SIZE + COST_SIZE + CREATED_AT_SIZE);
 
 /// PersistentCachePieceContent represents a persistent cache piece metadata and piece content request.
 ///
@@ -136,16 +172,12 @@ impl TryFrom<Bytes> for PersistentCachePieceContent {
 
     /// try_from decodes the persistent cache piece content request from the byte slice.
     fn try_from(bytes: Bytes) -> Result<Self> {
-        let metadata_length = u32::from_be_bytes(
-            bytes
-                .get(..METADATA_LENGTH_SIZE)
-                .ok_or(Error::InvalidPacket(
-                    "insufficient bytes for metadata length".to_string(),
-                ))?
-                .try_into()?,
-        );
+        let (metadata_length, metadata) = U32::read_from_prefix(&bytes).map_err(|_| {
+            Error::InvalidPacket("insufficient bytes for metadata length".to_string())
+        })?;
 
-        if bytes.len() != METADATA_LENGTH_SIZE + metadata_length as usize {
+        let metadata_length = metadata_length.get();
+        if metadata.len() != metadata_length as usize {
             return Err(Error::InvalidPacket(format!(
                 "expected {} bytes for PersistentCachePieceContent, got {}",
                 METADATA_LENGTH_SIZE + metadata_length as usize,
@@ -153,12 +185,7 @@ impl TryFrom<Bytes> for PersistentCachePieceContent {
             )));
         }
 
-        let metadata = (
-            bytes.slice(METADATA_LENGTH_SIZE..METADATA_LENGTH_SIZE + metadata_length as usize),
-            metadata_length,
-        )
-            .try_into()?;
-
+        let metadata = (bytes.slice(METADATA_LENGTH_SIZE..), metadata_length).try_into()?;
         Ok(PersistentCachePieceContent {
             metadata_length,
             metadata,
@@ -233,118 +260,43 @@ impl TryFrom<(Bytes, u32)> for PersistentCachePieceMetadata {
             )));
         }
 
-        let mut bytes_offset = 0;
-        let number = u32::from_be_bytes(
-            bytes
-                .get(bytes_offset..bytes_offset + NUMBER_SIZE)
-                .ok_or(Error::InvalidPacket(
-                    "insufficient bytes for piece number".to_string(),
-                ))?
-                .try_into()?,
-        );
-        bytes_offset += NUMBER_SIZE;
+        let (prefix, rest) = MetadataPrefix::ref_from_prefix(&bytes).map_err(|_| {
+            Error::InvalidPacket("insufficient bytes for piece metadata prefix".to_string())
+        })?;
 
-        let offset = u64::from_be_bytes(
-            bytes
-                .get(bytes_offset..bytes_offset + OFFSET_SIZE)
-                .ok_or(Error::InvalidPacket(
-                    "insufficient bytes for piece offset".to_string(),
-                ))?
-                .try_into()?,
-        );
-        bytes_offset += OFFSET_SIZE;
+        let (digest, rest) = rest
+            .split_at_checked(prefix.digest_length.get() as usize)
+            .ok_or_else(|| Error::InvalidPacket("insufficient bytes for digest".to_string()))?;
+        let digest = String::from_utf8(digest.to_vec())?;
 
-        let length = u64::from_be_bytes(
-            bytes
-                .get(bytes_offset..bytes_offset + LENGTH_SIZE)
-                .ok_or(Error::InvalidPacket(
-                    "insufficient bytes for piece length".to_string(),
-                ))?
-                .try_into()?,
-        );
+        let (parent_id_length, rest) = U32::read_from_prefix(rest).map_err(|_| {
+            Error::InvalidPacket("insufficient bytes for parent id length".to_string())
+        })?;
 
-        bytes_offset += LENGTH_SIZE;
+        let (parent_id, rest) = rest
+            .split_at_checked(parent_id_length.get() as usize)
+            .ok_or_else(|| Error::InvalidPacket("insufficient bytes for parent id".to_string()))?;
+        let parent_id = String::from_utf8(parent_id.to_vec())?;
 
-        let digest_length = u32::from_be_bytes(
-            bytes
-                .get(bytes_offset..bytes_offset + DIGEST_LENGTH_SIZE)
-                .ok_or(Error::InvalidPacket(
-                    "insufficient bytes for digest length".to_string(),
-                ))?
-                .try_into()?,
-        ) as usize;
-        bytes_offset += DIGEST_LENGTH_SIZE;
+        // Ignore any bytes following the suffix within the declared length, so a
+        // peer may append fields without breaking older decoders.
+        let (suffix, _) = MetadataSuffix::ref_from_prefix(rest).map_err(|_| {
+            Error::InvalidPacket("insufficient bytes for piece metadata suffix".to_string())
+        })?;
 
-        let digest = String::from_utf8(
-            bytes
-                .get(bytes_offset..bytes_offset + digest_length)
-                .ok_or(Error::InvalidPacket(
-                    "insufficient bytes for digest length".to_string(),
-                ))?
-                .to_vec(),
-        )?;
-        bytes_offset += digest_length;
-
-        let parent_id_length = u32::from_be_bytes(
-            bytes
-                .get(bytes_offset..bytes_offset + PARENT_ID_LENGTH_SIZE)
-                .ok_or(Error::InvalidPacket(
-                    "insufficient bytes for parent id length".to_string(),
-                ))?
-                .try_into()?,
-        ) as usize;
-        bytes_offset += PARENT_ID_LENGTH_SIZE;
-
-        let parent_id = String::from_utf8(
-            bytes
-                .get(bytes_offset..bytes_offset + parent_id_length)
-                .ok_or(Error::InvalidPacket(
-                    "insufficient bytes for parent id".to_string(),
-                ))?
-                .to_vec(),
-        )?;
-        bytes_offset += parent_id_length;
-
-        let traffic_type = bytes
-            .get(bytes_offset)
-            .ok_or(Error::InvalidPacket(
-                "insufficient bytes for traffic type".to_string(),
-            ))?
-            .to_owned();
-        bytes_offset += TRAFFIC_TYPE_SIZE;
-
-        let cost = Duration::from_secs(u64::from_be_bytes(
-            bytes
-                .get(bytes_offset..bytes_offset + COST_SIZE)
-                .ok_or(Error::InvalidPacket(
-                    "insufficient bytes for cost".to_string(),
-                ))?
-                .try_into()?,
-        ));
-        bytes_offset += COST_SIZE;
-
-        let created_at = DateTime::from_timestamp(
-            i64::from_be_bytes(
-                bytes
-                    .get(bytes_offset..bytes_offset + CREATED_AT_SIZE)
-                    .ok_or(Error::InvalidPacket(
-                        "insufficient bytes for created_at".to_string(),
-                    ))?
-                    .try_into()?,
-            ),
-            0,
-        )
-        .ok_or_else(|| Error::InvalidPacket("invalid timestamp for created_at".to_string()))?
-        .naive_utc();
         Ok(PersistentCachePieceMetadata {
-            number,
-            offset,
-            length,
+            number: prefix.number.get(),
+            offset: prefix.offset.get(),
+            length: prefix.length.get(),
             digest,
             parent_id,
-            traffic_type,
-            cost,
-            created_at,
+            traffic_type: suffix.traffic_type,
+            cost: Duration::from_secs(suffix.cost.get()),
+            created_at: DateTime::from_timestamp(suffix.created_at.get(), 0)
+                .ok_or_else(|| {
+                    Error::InvalidPacket("invalid timestamp for created_at".to_string())
+                })?
+                .naive_utc(),
         })
     }
 }
@@ -364,7 +316,19 @@ impl From<PersistentCachePieceMetadata> for (Bytes, u32) {
             created_at,
         } = metadata;
 
-        let parent_id = parent_id.as_bytes();
+        let prefix = MetadataPrefix {
+            number: U32::new(number),
+            offset: U64::new(offset),
+            length: U64::new(length),
+            digest_length: U32::new(digest.len() as u32),
+        };
+        let parent_id_length = U32::new(parent_id.len() as u32);
+        let suffix = MetadataSuffix {
+            traffic_type,
+            cost: U64::new(cost.as_secs()),
+            created_at: I64::new(created_at.and_utc().timestamp()),
+        };
+
         let bytes_length = NUMBER_SIZE
             + OFFSET_SIZE
             + LENGTH_SIZE
@@ -377,16 +341,11 @@ impl From<PersistentCachePieceMetadata> for (Bytes, u32) {
             + CREATED_AT_SIZE;
 
         let mut bytes = BytesMut::with_capacity(bytes_length);
-        bytes.put_u32(number);
-        bytes.put_u64(offset);
-        bytes.put_u64(length);
-        bytes.put_u32(digest.len() as u32);
+        bytes.extend_from_slice(prefix.as_bytes());
         bytes.extend_from_slice(digest.as_bytes());
-        bytes.put_u32(parent_id.len() as u32);
-        bytes.extend_from_slice(parent_id);
-        bytes.put_u8(traffic_type);
-        bytes.put_u64(cost.as_secs());
-        bytes.put_i64(created_at.and_utc().timestamp());
+        bytes.extend_from_slice(parent_id_length.as_bytes());
+        bytes.extend_from_slice(parent_id.as_bytes());
+        bytes.extend_from_slice(suffix.as_bytes());
         (bytes.freeze(), bytes_length as u32)
     }
 }

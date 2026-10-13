@@ -17,12 +17,25 @@
 use crate::error::{Error, Result};
 use bytes::{BufMut, Bytes, BytesMut};
 use std::convert::TryFrom;
+use zerocopy::{byteorder::network_endian::U32, FromBytes, Immutable, KnownLayout, Unaligned};
 
 /// TASK_ID_SIZE is the size of the task ID in bytes.
 pub const TASK_ID_SIZE: usize = 64;
 
 /// PIECE_NUMBER_SIZE is the size of the piece number in bytes.
 pub const PIECE_NUMBER_SIZE: usize = 4;
+
+/// RawDownloadCachePiece is the on-wire layout of the download piece request.
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C)]
+struct RawDownloadCachePiece {
+    task_id: [u8; TASK_ID_SIZE],
+    piece_number: U32,
+}
+
+// Verify at compile time that the layout has no padding and matches the documented field
+// sizes.
+const _: () = assert!(size_of::<RawDownloadCachePiece>() == TASK_ID_SIZE + PIECE_NUMBER_SIZE);
 
 /// DownloadCachePiece represents a download cache piece request.
 ///
@@ -78,31 +91,17 @@ impl TryFrom<Bytes> for DownloadCachePiece {
 
     /// try_from decodes the download cache piece request from the byte slice.
     fn try_from(bytes: Bytes) -> Result<Self> {
-        if bytes.len() != TASK_ID_SIZE + PIECE_NUMBER_SIZE {
-            return Err(Error::InvalidLength(format!(
+        let raw = RawDownloadCachePiece::ref_from_bytes(&bytes).map_err(|_| {
+            Error::InvalidLength(format!(
                 "expected {} bytes for DownloadCachePiece, got {}",
                 TASK_ID_SIZE + PIECE_NUMBER_SIZE,
                 bytes.len()
-            )));
-        }
+            ))
+        })?;
 
         Ok(DownloadCachePiece {
-            task_id: String::from_utf8(
-                bytes
-                    .get(..TASK_ID_SIZE)
-                    .ok_or(Error::InvalidPacket(
-                        "insufficient bytes for task id".to_string(),
-                    ))?
-                    .to_vec(),
-            )?,
-            piece_number: u32::from_be_bytes(
-                bytes
-                    .get(TASK_ID_SIZE..TASK_ID_SIZE + PIECE_NUMBER_SIZE)
-                    .ok_or(Error::InvalidPacket(
-                        "insufficient bytes for piece number".to_string(),
-                    ))?
-                    .try_into()?,
-            ),
+            task_id: String::from_utf8(raw.task_id.to_vec())?,
+            piece_number: raw.piece_number.get(),
         })
     }
 }
