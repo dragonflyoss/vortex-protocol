@@ -15,7 +15,6 @@
  */
 
 pub mod cache_piece_content;
-pub mod close;
 pub mod download_cache_piece;
 pub mod download_persistent_cache_piece;
 pub mod download_persistent_piece;
@@ -24,8 +23,15 @@ pub mod error;
 pub mod persistent_cache_piece_content;
 pub mod persistent_piece_content;
 pub mod piece_content;
+pub mod piece_metadata;
 
-/// Tag Definitions
+/// The size of the task ID in a download request, the hex SHA-256 digest of the task.
+pub const TASK_ID_SIZE: usize = 64;
+
+/// The size of the piece number in a download request.
+pub const PIECE_NUMBER_SIZE: usize = 4;
+
+/// The tag of a packet value.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tag {
@@ -33,28 +39,28 @@ pub enum Tag {
     /// where the Task ID is a SHA-256 value and the Piece ID is a number.
     DownloadPiece = 0,
 
-    /// The content of a piece, with a maximum size of 4 GiB per piece.
+    /// The content of a piece, with a maximum size of 1 GiB per piece.
     PieceContent = 1,
 
     /// Download the content of a persistent piece from a peer. It is composed of `{Task ID}{Piece ID}`,
     /// where the Task ID is a SHA-256 value and the Piece ID is a number.
     DownloadPersistentPiece = 2,
 
-    /// The content of a persistent piece, with a maximum size of 4 GiB per piece.
+    /// The content of a persistent piece, with a maximum size of 1 GiB per piece.
     PersistentPieceContent = 3,
 
     /// Download the content of a persistent cache piece from a peer. It is composed of `{Task ID}{Piece ID}`,
     /// where the Task ID is a SHA-256 value and the Piece ID is a number.
     DownloadPersistentCachePiece = 4,
 
-    /// The content of a persistent cache piece, with a maximum size of 4 GiB per piece.
+    /// The content of a persistent cache piece, with a maximum size of 1 GiB per piece.
     PersistentCachePieceContent = 5,
 
     /// Download the content of a cache piece from a peer. It is composed of `{Task ID}{Piece ID}`,
     /// where the Task ID is a SHA-256 value and the Piece ID is a number.
     DownloadCachePiece = 6,
 
-    /// The content of a cache piece, with a maximum size of 4 GiB per piece.
+    /// The content of a cache piece, with a maximum size of 1 GiB per piece.
     CachePieceContent = 7,
 
     /// Reserved for future use, for tags 8-253.
@@ -67,9 +73,9 @@ pub enum Tag {
     Error = 255,
 }
 
-/// Implement TryFrom<u8> for Tag.
+/// Implements the conversion from the wire byte.
 impl From<u8> for Tag {
-    /// Converts a u8 to a Tag enum.
+    /// Converts the wire byte into the tag.
     fn from(value: u8) -> Self {
         match value {
             0 => Tag::DownloadPiece,
@@ -87,9 +93,9 @@ impl From<u8> for Tag {
     }
 }
 
-/// Implement From<Tag> for u8.
+/// Implements the conversion into the wire byte.
 impl From<Tag> for u8 {
-    /// Converts a Tag enum to a u8.
+    /// Converts the tag into the wire byte.
     fn from(tag: Tag) -> Self {
         match tag {
             Tag::DownloadPiece => 0,
@@ -112,34 +118,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_try_from_u8() {
-        assert_eq!(Tag::from(0), Tag::DownloadPiece);
-        assert_eq!(Tag::from(1), Tag::PieceContent);
-        assert_eq!(Tag::from(2), Tag::DownloadPersistentPiece);
-        assert_eq!(Tag::from(3), Tag::PersistentPieceContent);
-        assert_eq!(Tag::from(4), Tag::DownloadPersistentCachePiece);
-        assert_eq!(Tag::from(5), Tag::PersistentCachePieceContent);
-        assert_eq!(Tag::from(6), Tag::DownloadCachePiece);
-        assert_eq!(Tag::from(7), Tag::CachePieceContent);
-        assert_eq!(Tag::from(8), Tag::Reserved(8));
-        assert_eq!(Tag::from(253), Tag::Reserved(253));
-        assert_eq!(Tag::from(254), Tag::Close);
-        assert_eq!(Tag::from(255), Tag::Error);
-    }
+    fn tag_converts_from_and_into_every_range() {
+        let test_cases = vec![
+            (0, Tag::DownloadPiece),
+            (1, Tag::PieceContent),
+            (2, Tag::DownloadPersistentPiece),
+            (3, Tag::PersistentPieceContent),
+            (4, Tag::DownloadPersistentCachePiece),
+            (5, Tag::PersistentCachePieceContent),
+            (6, Tag::DownloadCachePiece),
+            (7, Tag::CachePieceContent),
+            (8, Tag::Reserved(8)),
+            (253, Tag::Reserved(253)),
+            (254, Tag::Close),
+            (255, Tag::Error),
+        ];
 
-    #[test]
-    fn test_from_tag() {
-        assert_eq!(u8::from(Tag::DownloadPiece), 0);
-        assert_eq!(u8::from(Tag::PieceContent), 1);
-        assert_eq!(u8::from(Tag::DownloadPersistentPiece), 2);
-        assert_eq!(u8::from(Tag::PersistentPieceContent), 3);
-        assert_eq!(u8::from(Tag::DownloadPersistentCachePiece), 4);
-        assert_eq!(u8::from(Tag::PersistentCachePieceContent), 5);
-        assert_eq!(u8::from(Tag::DownloadCachePiece), 6);
-        assert_eq!(u8::from(Tag::CachePieceContent), 7);
-        assert_eq!(u8::from(Tag::Reserved(8)), 8);
-        assert_eq!(u8::from(Tag::Reserved(253)), 253);
-        assert_eq!(u8::from(Tag::Close), 254);
-        assert_eq!(u8::from(Tag::Error), 255);
+        for (value, tag) in test_cases {
+            assert_eq!(Tag::from(value), tag);
+            assert_eq!(u8::from(tag), value);
+        }
     }
 }

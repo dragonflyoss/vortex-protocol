@@ -17,18 +17,41 @@ efficient and flexible data transmission, making it ideal for large-scale file d
 - **High Performance**: Designed for high-throughput file transfer scenarios.
 - **Extensible Design**: Reserved tags for future protocol extensions like compression and encryption.
 
+## Usage
+
+Every TLV value implements `Message`, which encodes into any `BufMut` and decodes from a byte
+slice. `encode_packet` prepends the packet header; `Vortex::decode` parses a whole packet.
+
+```rust
+use bytes::BytesMut;
+use vortex_protocol::tlv::download_piece::DownloadPiece;
+use vortex_protocol::{Message, Vortex, HEADER_SIZE};
+
+let request = DownloadPiece::new("a".repeat(64), 1);
+let mut buffer = BytesMut::with_capacity(HEADER_SIZE + request.encoded_len());
+request.encode_packet(&mut buffer);
+
+match Vortex::decode(&buffer)? {
+    Vortex::DownloadPiece(header, request) => println!("{} {:?}", header.length(), request),
+    packet => println!("unexpected packet {packet:?}"),
+}
+```
+
+The wire format is stable across releases: peers running different versions of the crate
+interoperate, and `tests/wire_format.rs` pins the bytes produced by earlier releases.
+
 ## Documentation
 
 For details, please see [the specification](docs/README.md).
 
 ## Benchmarking
 
-Vortex protocol includes comprehensive benchmarks for packet creation, serialization, and deserialization:
+Vortex protocol includes benchmarks for encoding and decoding every message and whole packets:
 
 ```bash
 # Run all benchmarks
 cargo bench
 
-# Run specific benchmark group
-cargo bench "Vortex Packet Creation"
+# Run the benchmarks of one message
+cargo bench PieceContent
 ```

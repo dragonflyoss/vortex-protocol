@@ -15,163 +15,141 @@
  */
 
 use crate::error::{Error, Result};
-use bytes::{BufMut, Bytes, BytesMut};
-use std::convert::TryFrom;
+use crate::tlv::{Tag, PIECE_NUMBER_SIZE, TASK_ID_SIZE};
+use crate::Message;
+use bytes::BufMut;
+use zerocopy::{byteorder::network_endian::U32, FromBytes, Immutable, KnownLayout, Unaligned};
 
-/// TASK_ID_SIZE is the size of the task ID in bytes.
-pub const TASK_ID_SIZE: usize = 64;
+/// The on-wire layout of the download cache piece request.
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C)]
+struct RawDownloadCachePiece {
+    /// The task ID, the hex SHA-256 digest.
+    task_id: [u8; TASK_ID_SIZE],
 
-/// PIECE_NUMBER_SIZE is the size of the piece number in bytes.
-pub const PIECE_NUMBER_SIZE: usize = 4;
+    /// The piece number, in network byte order.
+    piece_number: U32,
+}
 
-/// DownloadCachePiece represents a download cache piece request.
-///
-/// Value Format:
-///   - Task ID (64 bytes): SHA-256 hash of the task ID.
-///   - Piece Number (4 bytes): Piece number to download.
+// Verify at compile time that the layout has no padding and matches the documented field
+// sizes.
+const _: () = assert!(size_of::<RawDownloadCachePiece>() == TASK_ID_SIZE + PIECE_NUMBER_SIZE);
+
+/// The download cache piece request.
 ///
 /// ```text
 /// -----------------------------------------------
 /// | Task ID (64 bytes) | Piece Number (4 bytes) |
 /// -----------------------------------------------
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DownloadCachePiece {
-    task_id: String,
-    piece_number: u32,
+    /// The task ID, the hex SHA-256 digest of [TASK_ID_SIZE] bytes.
+    pub task_id: String,
+
+    /// The number of the piece to download.
+    pub piece_number: u32,
 }
 
-/// DownloadCachePiece implements the DownloadCachePiece functions.
+/// Implements the download cache piece request.
 impl DownloadCachePiece {
-    /// new creates a new DownloadPiece request.
+    /// Creates a download cache piece request.
     pub fn new(task_id: String, piece_number: u32) -> Self {
         Self {
             task_id,
             piece_number,
         }
     }
-
-    /// task_id returns the task ID.
-    pub fn task_id(&self) -> &str {
-        &self.task_id
-    }
-
-    /// piece_number returns the piece number.
-    pub fn piece_number(&self) -> u32 {
-        self.piece_number
-    }
-
-    /// len returns the length of the download cache piece request.
-    pub fn len(&self) -> usize {
-        TASK_ID_SIZE + PIECE_NUMBER_SIZE
-    }
-
-    /// is_empty returns whether the download cache piece request is empty.
-    pub fn is_empty(&self) -> bool {
-        self.task_id.is_empty()
-    }
 }
 
-/// Implement TryFrom<Bytes> for DownloadCachePiece for conversion from a byte slice.
-impl TryFrom<Bytes> for DownloadCachePiece {
-    type Error = Error;
+/// Implements the packet value.
+impl Message for DownloadCachePiece {
+    /// The tag of the packets carrying the download cache piece request.
+    const TAG: Tag = Tag::DownloadCachePiece;
 
-    /// try_from decodes the download cache piece request from the byte slice.
-    fn try_from(bytes: Bytes) -> Result<Self> {
-        if bytes.len() != TASK_ID_SIZE + PIECE_NUMBER_SIZE {
-            return Err(Error::InvalidLength(format!(
-                "expected {} bytes for DownloadCachePiece, got {}",
+    /// Returns the encoded length of the download cache piece request.
+    fn encoded_len(&self) -> usize {
+        self.task_id.len() + PIECE_NUMBER_SIZE
+    }
+
+    /// Appends the encoded download cache piece request to the buffer.
+    fn encode(&self, buffer: &mut impl BufMut) {
+        buffer.put_slice(self.task_id.as_bytes());
+        buffer.put_u32(self.piece_number);
+    }
+
+    /// Decodes the download cache piece request from the value of a packet.
+    fn decode(buffer: &[u8]) -> Result<Self> {
+        let raw = RawDownloadCachePiece::ref_from_bytes(buffer).map_err(|_| {
+            Error::InvalidLength(format!(
+                "expected {} bytes for {:?}, got {}",
                 TASK_ID_SIZE + PIECE_NUMBER_SIZE,
-                bytes.len()
-            )));
-        }
+                Self::TAG,
+                buffer.len()
+            ))
+        })?;
 
-        Ok(DownloadCachePiece {
-            task_id: String::from_utf8(
-                bytes
-                    .get(..TASK_ID_SIZE)
-                    .ok_or(Error::InvalidPacket(
-                        "insufficient bytes for task id".to_string(),
-                    ))?
-                    .to_vec(),
-            )?,
-            piece_number: u32::from_be_bytes(
-                bytes
-                    .get(TASK_ID_SIZE..TASK_ID_SIZE + PIECE_NUMBER_SIZE)
-                    .ok_or(Error::InvalidPacket(
-                        "insufficient bytes for piece number".to_string(),
-                    ))?
-                    .try_into()?,
-            ),
+        Ok(Self {
+            task_id: String::from_utf8(raw.task_id.to_vec())?,
+            piece_number: raw.piece_number.get(),
         })
-    }
-}
-
-/// Implement From<DownloadCachePiece> for Bytes for conversion to a byte slice.
-impl From<DownloadCachePiece> for Bytes {
-    /// from converts the download piece request to a byte slice.
-    fn from(piece: DownloadCachePiece) -> Self {
-        let mut bytes = BytesMut::with_capacity(piece.len());
-        bytes.extend_from_slice(piece.task_id.as_bytes());
-        bytes.put_u32(piece.piece_number);
-        bytes.freeze()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::type_complexity)]
+
     use super::*;
-    use bytes::Bytes;
+    use bytes::BytesMut;
 
     #[test]
-    fn test_new() {
-        let task_id = "a".repeat(64);
-        let piece_number = 42;
-        let download_cache_piece = DownloadCachePiece::new(task_id.clone(), piece_number);
+    fn encode_writes_the_wire_layout() {
+        let request = DownloadCachePiece::new("a".repeat(TASK_ID_SIZE), 0x0102_0304);
+        let mut buffer = BytesMut::new();
+        request.encode(&mut buffer);
 
-        assert_eq!(download_cache_piece.task_id(), task_id);
-        assert_eq!(download_cache_piece.piece_number(), piece_number);
-        assert_eq!(download_cache_piece.len(), TASK_ID_SIZE + PIECE_NUMBER_SIZE);
+        assert_eq!(buffer.len(), request.encoded_len());
+        assert_eq!(&buffer[..TASK_ID_SIZE], "a".repeat(TASK_ID_SIZE).as_bytes());
+        assert_eq!(&buffer[TASK_ID_SIZE..], [1, 2, 3, 4]);
     }
 
     #[test]
-    fn test_is_empty() {
-        let download_cache_piece_empty = DownloadCachePiece::new("".to_string(), 0);
-        let download_cache_piece_non_empty = DownloadCachePiece::new("a".repeat(32), 1);
+    fn decode_roundtrips() {
+        let test_cases = vec![
+            DownloadCachePiece::new("a".repeat(TASK_ID_SIZE), 0),
+            DownloadCachePiece::new("f".repeat(TASK_ID_SIZE), u32::MAX),
+        ];
 
-        assert!(download_cache_piece_empty.is_empty());
-        assert!(!download_cache_piece_non_empty.is_empty());
+        for request in test_cases {
+            let mut buffer = BytesMut::new();
+            request.encode(&mut buffer);
+            assert_eq!(DownloadCachePiece::decode(&buffer).unwrap(), request);
+        }
     }
 
     #[test]
-    fn test_valid_conversion() {
-        let task_id = "a".repeat(64);
-        let piece_number = 42;
-        let download_cache_piece = DownloadCachePiece::new(task_id.clone(), piece_number);
+    fn decode_rejects_malformed_input() {
+        let mut invalid_utf8 = vec![0xFF; TASK_ID_SIZE];
+        invalid_utf8.extend_from_slice(&[0; PIECE_NUMBER_SIZE]);
 
-        let bytes: Bytes = download_cache_piece.into();
-        let download_cache_piece = DownloadCachePiece::try_from(bytes).unwrap();
+        let test_cases: Vec<(Vec<u8>, fn(Result<DownloadCachePiece>))> = vec![
+            (vec![], |result| {
+                assert!(matches!(result, Err(Error::InvalidLength(_))))
+            }),
+            (vec![b'a'; TASK_ID_SIZE + PIECE_NUMBER_SIZE - 1], |result| {
+                assert!(matches!(result, Err(Error::InvalidLength(_))))
+            }),
+            (vec![b'a'; TASK_ID_SIZE + PIECE_NUMBER_SIZE + 1], |result| {
+                assert!(matches!(result, Err(Error::InvalidLength(_))))
+            }),
+            (invalid_utf8, |result| {
+                assert!(matches!(result, Err(Error::FromUtf8Error(_))))
+            }),
+        ];
 
-        assert_eq!(download_cache_piece.task_id(), task_id);
-        assert_eq!(download_cache_piece.piece_number(), piece_number);
-    }
-
-    #[test]
-    fn test_invalid_conversion() {
-        let invalid_bytes =
-            Bytes::from("c993dfb0ecfbe1b4e158891bafff709e5d29d3fcd522e09b183aeb5db1db50111111111");
-        let result = DownloadCachePiece::try_from(invalid_bytes);
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::InvalidLength(_)));
-
-        let invalid_bytes = Bytes::from("task_id");
-        let result = DownloadCachePiece::try_from(invalid_bytes);
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::InvalidLength(_)));
-
-        let invalid_bytes = Bytes::from("");
-        let result = DownloadCachePiece::try_from(invalid_bytes);
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::InvalidLength(_)));
+        for (buffer, expect) in test_cases {
+            expect(DownloadCachePiece::decode(&buffer));
+        }
     }
 }

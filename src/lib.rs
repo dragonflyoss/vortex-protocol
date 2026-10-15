@@ -15,224 +15,149 @@
  */
 
 use crate::error::{Error, Result};
-use bytes::{BufMut, Bytes, BytesMut};
-use rand::prelude::*;
+use crate::tlv::cache_piece_content::CachePieceContent;
+use crate::tlv::download_cache_piece::DownloadCachePiece;
+use crate::tlv::download_persistent_cache_piece::DownloadPersistentCachePiece;
+use crate::tlv::download_persistent_piece::DownloadPersistentPiece;
+use crate::tlv::download_piece::DownloadPiece;
+use crate::tlv::persistent_cache_piece_content::PersistentCachePieceContent;
+use crate::tlv::persistent_piece_content::PersistentPieceContent;
+use crate::tlv::piece_content::PieceContent;
+use crate::tlv::Tag;
+use bytes::BufMut;
+use zerocopy::{
+    byteorder::network_endian::U32, FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned,
+};
 
 pub mod error;
 pub mod tlv;
 
-/// HEADER_SIZE is the size of the Vortex packet header including the packet identifier, tag, and
-/// length.
+/// The size of the packet header: the packet identifier, the tag and the value length.
 pub const HEADER_SIZE: usize = 6;
 
-/// MAX_VALUE_SIZE is the maximum size of the value field (4 GiB).
-const MAX_VALUE_SIZE: usize = 4 * 1024 * 1024 * 1024;
-
-/// Header represents the Vortex packet header.
-#[derive(Debug, Clone)]
-pub struct Header {
+/// The on-wire layout of the packet header.
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C)]
+struct RawHeader {
+    /// The packet identifier.
     id: u8,
-    tag: tlv::Tag,
+
+    /// The tag of the value.
+    tag: u8,
+
+    /// The length of the value, in network byte order.
+    length: U32,
+}
+
+// Verify at compile time that the layout has no padding and matches HEADER_SIZE.
+const _: () = assert!(size_of::<RawHeader>() == HEADER_SIZE);
+
+/// A value carried by a Vortex packet, encoded to and decoded from the wire.
+pub trait Message: Sized {
+    /// The tag of the packets carrying this message.
+    const TAG: Tag;
+
+    /// Returns the number of bytes appended by [Message::encode].
+    fn encoded_len(&self) -> usize;
+
+    /// Appends the encoded message to the buffer.
+    fn encode(&self, buffer: &mut impl BufMut);
+
+    /// Decodes the message from the value of a packet.
+    fn decode(buffer: &[u8]) -> Result<Self>;
+
+    /// Appends a packet header followed by the encoded message to the buffer.
+    fn encode_packet(&self, buffer: &mut impl BufMut) {
+        Header::new(Self::TAG, self.encoded_len() as u32).encode(buffer);
+        self.encode(buffer);
+    }
+}
+
+/// The packet header.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Header {
+    /// The packet identifier.
+    id: u8,
+
+    /// The tag of the value.
+    tag: Tag,
+
+    /// The length of the value.
     length: u32,
 }
 
-/// Header implements the Header functions.
+/// Implements the packet header.
 impl Header {
-    /// new creates a new Vortex packet header.
-    pub fn new(tag: tlv::Tag, value_length: u32) -> Self {
-        let mut rng = thread_rng();
+    /// Creates a header with a random packet identifier.
+    pub fn new(tag: Tag, length: u32) -> Self {
         Self {
-            id: rng.gen(),
+            id: rand::random(),
             tag,
-            length: value_length,
+            length,
         }
     }
 
-    /// new_download_piece creates a new Vortex packet header for download piece request.
-    pub fn new_download_piece() -> Self {
-        let mut rng = thread_rng();
-        Self {
-            id: rng.gen(),
-            tag: tlv::Tag::DownloadPiece,
-            length: (tlv::download_piece::TASK_ID_SIZE + tlv::download_piece::PIECE_NUMBER_SIZE)
-                as u32,
-        }
-    }
-
-    /// new_download_cache_piece creates a new Vortex packet header for download cache piece request.
-    pub fn new_download_cache_piece() -> Self {
-        let mut rng = thread_rng();
-        Self {
-            id: rng.gen(),
-            tag: tlv::Tag::DownloadCachePiece,
-            length: (tlv::download_cache_piece::TASK_ID_SIZE
-                + tlv::download_cache_piece::PIECE_NUMBER_SIZE) as u32,
-        }
-    }
-
-    /// new_download_persistent_piece creates a new Vortex packet header for download persistent piece request.
-    pub fn new_download_persistent_piece() -> Self {
-        let mut rng = thread_rng();
-        Self {
-            id: rng.gen(),
-            tag: tlv::Tag::DownloadPersistentPiece,
-            length: (tlv::download_persistent_piece::TASK_ID_SIZE
-                + tlv::download_persistent_piece::PIECE_NUMBER_SIZE) as u32,
-        }
-    }
-
-    /// new_download_persistent_cache_piece creates a new Vortex packet header for download persistent cache piece request.
-    pub fn new_download_persistent_cache_piece() -> Self {
-        let mut rng = thread_rng();
-        Self {
-            id: rng.gen(),
-            tag: tlv::Tag::DownloadPersistentCachePiece,
-            length: (tlv::download_persistent_cache_piece::TASK_ID_SIZE
-                + tlv::download_persistent_cache_piece::PIECE_NUMBER_SIZE)
-                as u32,
-        }
-    }
-
-    /// new_close creates a new Vortex packet header for close message.
-    pub fn new_close() -> Self {
-        let mut rng = thread_rng();
-        Self {
-            id: rng.gen(),
-            tag: tlv::Tag::Close,
-            length: 0,
-        }
-    }
-
-    /// new_piece_content creates a new Vortex packet header for piece content.
-    pub fn new_piece_content(value_length: u32) -> Self {
-        let mut rng = thread_rng();
-        Self {
-            id: rng.gen(),
-            tag: tlv::Tag::PieceContent,
-            length: value_length,
-        }
-    }
-
-    /// new_cache_piece_content creates a new Vortex packet header for cache piece content.
-    pub fn new_cache_piece_content(value_length: u32) -> Self {
-        let mut rng = thread_rng();
-        Self {
-            id: rng.gen(),
-            tag: tlv::Tag::CachePieceContent,
-            length: value_length,
-        }
-    }
-
-    /// new_persistent_piece_content creates a new Vortex packet header for persistent piece content.
-    pub fn new_persistent_piece_content(value_length: u32) -> Self {
-        let mut rng = thread_rng();
-        Self {
-            id: rng.gen(),
-            tag: tlv::Tag::PersistentPieceContent,
-            length: value_length,
-        }
-    }
-
-    /// new_persistent_cache_piece_content creates a new Vortex packet header for persistent cache piece content.
-    pub fn new_persistent_cache_piece_content(value_length: u32) -> Self {
-        let mut rng = thread_rng();
-        Self {
-            id: rng.gen(),
-            tag: tlv::Tag::PersistentCachePieceContent,
-            length: value_length,
-        }
-    }
-
-    /// new_error creates a new Vortex packet header for error.
-    pub fn new_error(value_length: u32) -> Self {
-        let mut rng = thread_rng();
-        Self {
-            id: rng.gen(),
-            tag: tlv::Tag::Error,
-            length: value_length,
-        }
-    }
-
-    /// id returns the packet identifier.
+    /// Returns the packet identifier.
     pub fn id(&self) -> u8 {
         self.id
     }
 
-    /// tag returns the tag.
-    pub fn tag(&self) -> tlv::Tag {
+    /// Returns the tag of the value.
+    pub fn tag(&self) -> Tag {
         self.tag
     }
 
-    /// length returns the length of the value field.
+    /// Returns the length of the value.
     pub fn length(&self) -> u32 {
         self.length
     }
+
+    /// Appends the encoded header to the buffer.
+    pub fn encode(&self, buffer: &mut impl BufMut) {
+        buffer.put_slice(RawHeader::from(self).as_bytes());
+    }
+
+    /// Decodes the header from exactly [HEADER_SIZE] bytes.
+    pub fn decode(buffer: &[u8]) -> Result<Self> {
+        let raw = RawHeader::ref_from_bytes(buffer).map_err(|_| {
+            Error::InvalidPacket(format!(
+                "expected {HEADER_SIZE} bytes for header, got {}",
+                buffer.len()
+            ))
+        })?;
+
+        Ok(raw.into())
+    }
 }
 
-/// Implement TryFrom<Bytes> for Header.
-impl TryFrom<Bytes> for Header {
-    type Error = Error;
-
-    /// try_from converts a Bytes into a Header.
-    fn try_from(bytes: Bytes) -> Result<Self> {
-        if bytes.len() != HEADER_SIZE {
-            return Err(Error::InvalidPacket(format!(
-                "expected min {HEADER_SIZE} bytes, got {}",
-                bytes.len()
-            )));
+/// Implements the conversion from the on-wire layout.
+impl From<&RawHeader> for Header {
+    /// Converts the on-wire layout into the header.
+    fn from(raw: &RawHeader) -> Self {
+        Header {
+            id: raw.id,
+            tag: raw.tag.into(),
+            length: raw.length.get(),
         }
-
-        let id = bytes
-            .first()
-            .ok_or(Error::InvalidPacket(
-                "insufficient bytes for id".to_string(),
-            ))?
-            .to_owned();
-
-        let tag = bytes
-            .get(1)
-            .ok_or(Error::InvalidPacket(
-                "insufficient bytes for tag".to_string(),
-            ))?
-            .to_owned()
-            .into();
-
-        let length = u32::from_be_bytes(
-            bytes
-                .get(2..HEADER_SIZE)
-                .ok_or(Error::InvalidPacket(
-                    "insufficient bytes for length".to_string(),
-                ))?
-                .try_into()?,
-        );
-        Ok(Header { id, tag, length })
     }
 }
 
-/// Implement From<Header> for Bytes.
-impl From<Header> for Bytes {
-    /// from converts a Header into Bytes.
-    fn from(header: Header) -> Self {
-        let mut bytes = BytesMut::with_capacity(HEADER_SIZE);
-        bytes.put_u8(header.id);
-        bytes.put_u8(header.tag.into());
-        bytes.put_u32(header.length);
-        bytes.freeze()
+/// Implements the conversion into the on-wire layout.
+impl From<&Header> for RawHeader {
+    /// Converts the header into the on-wire layout.
+    fn from(header: &Header) -> Self {
+        RawHeader {
+            id: header.id,
+            tag: header.tag.into(),
+            length: U32::new(header.length),
+        }
     }
 }
 
-/// Vortex Protocol
+/// A Vortex packet: the header and the decoded value.
 ///
-/// Vortex is a peer-to-peer (P2P) file transfer protocol using TLV (Tag-Length-Value) format for
-/// efficient and flexible data transmission. Designed for reliable and scalable file sharing.
-///
-/// Packet Format:
-///     - Packet Identifier (1 bytes): Uniquely identifies each packet
-///     - Tag (1 bytes): Specifies data type in value field
-///     - Length (4 bytes): Indicates Value field length, up to 4 GiB
-///     - Value (variable): Actual data content, maximum 4 GiB
-///
-/// Protocol Format:
+/// The Vortex protocol is a peer-to-peer (P2P) file transfer protocol using the TLV
+/// (Tag-Length-Value) format.
 ///
 /// ```text
 /// ---------------------------------------------------------------------------------------------------
@@ -242,597 +167,488 @@ impl From<Header> for Bytes {
 /// ---------------------------------------------------------------------------------------------------
 /// ```
 ///
-/// For more information, please refer to the [Vortex Protocol](https://github.com/dragonflyoss/vortex/blob/main/docs/README.md).
-#[derive(Debug, Clone)]
+/// For more information, refer to the [Vortex Protocol](https://github.com/dragonflyoss/vortex-protocol/blob/main/docs/README.md).
+///
+/// # Examples
+///
+/// ```
+/// use bytes::BytesMut;
+/// use vortex_protocol::tlv::download_piece::DownloadPiece;
+/// use vortex_protocol::{Message, Vortex};
+///
+/// # fn main() -> vortex_protocol::error::Result<()> {
+/// let request = DownloadPiece::new("a".repeat(64), 1);
+/// let mut buffer = BytesMut::with_capacity(vortex_protocol::HEADER_SIZE + request.encoded_len());
+/// request.encode_packet(&mut buffer);
+///
+/// match Vortex::decode(&buffer)? {
+///     Vortex::DownloadPiece(header, decoded) => {
+///         assert_eq!(header.length() as usize, request.encoded_len());
+///         assert_eq!(decoded, request);
+///     }
+///     packet => panic!("unexpected packet {packet:?}"),
+/// }
+/// # Ok(())
+/// # }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Vortex {
-    DownloadPiece(Header, tlv::download_piece::DownloadPiece),
-    PieceContent(Header, tlv::piece_content::PieceContent),
-    DownloadCachePiece(Header, tlv::download_cache_piece::DownloadCachePiece),
-    CachePieceContent(Header, tlv::cache_piece_content::CachePieceContent),
-    DownloadPersistentPiece(
-        Header,
-        tlv::download_persistent_piece::DownloadPersistentPiece,
-    ),
-    PersistentPieceContent(
-        Header,
-        tlv::persistent_piece_content::PersistentPieceContent,
-    ),
-    DownloadPersistentCachePiece(
-        Header,
-        tlv::download_persistent_cache_piece::DownloadPersistentCachePiece,
-    ),
-    PersistentCachePieceContent(
-        Header,
-        tlv::persistent_cache_piece_content::PersistentCachePieceContent,
-    ),
+    /// The download piece request.
+    DownloadPiece(Header, DownloadPiece),
+
+    /// The piece content response.
+    PieceContent(Header, PieceContent),
+
+    /// The download cache piece request.
+    DownloadCachePiece(Header, DownloadCachePiece),
+
+    /// The cache piece content response.
+    CachePieceContent(Header, CachePieceContent),
+
+    /// The download persistent piece request.
+    DownloadPersistentPiece(Header, DownloadPersistentPiece),
+
+    /// The persistent piece content response.
+    PersistentPieceContent(Header, PersistentPieceContent),
+
+    /// The download persistent cache piece request.
+    DownloadPersistentCachePiece(Header, DownloadPersistentCachePiece),
+
+    /// The persistent cache piece content response.
+    PersistentCachePieceContent(Header, PersistentCachePieceContent),
+
+    /// A packet with a reserved tag, whose value is ignored.
     Reserved(Header),
+
+    /// The close message.
     Close(Header),
+
+    /// The error message.
     Error(Header, tlv::error::Error),
 }
 
-/// Vortex implements the Vortex functions.
+/// Implements the Vortex packet.
 impl Vortex {
-    /// Creates a new Vortex packet.
-    pub fn new(tag: tlv::Tag, value: Bytes) -> Result<Self> {
-        (tag, Header::new(tag, value.len() as u32), value).try_into()
-    }
-
-    /// id returns the packet identifier of the Vortex packet.
-    #[inline]
-    pub fn id(&self) -> u8 {
-        match self {
-            Vortex::DownloadPiece(header, _) => header.id,
-            Vortex::PieceContent(header, _) => header.id,
-            Vortex::DownloadCachePiece(header, _) => header.id,
-            Vortex::CachePieceContent(header, _) => header.id,
-            Vortex::DownloadPersistentPiece(header, _) => header.id,
-            Vortex::PersistentPieceContent(header, _) => header.id,
-            Vortex::DownloadPersistentCachePiece(header, _) => header.id,
-            Vortex::PersistentCachePieceContent(header, _) => header.id,
-            Vortex::Reserved(header) => header.id,
-            Vortex::Close(header) => header.id,
-            Vortex::Error(header, _) => header.id,
-        }
-    }
-
-    /// tag returns the tag of the Vortex packet.
-    #[inline]
-    pub fn tag(&self) -> tlv::Tag {
-        match self {
-            Vortex::DownloadPiece(header, _) => header.tag,
-            Vortex::PieceContent(header, _) => header.tag,
-            Vortex::DownloadCachePiece(header, _) => header.tag,
-            Vortex::CachePieceContent(header, _) => header.tag,
-            Vortex::DownloadPersistentPiece(header, _) => header.tag,
-            Vortex::PersistentPieceContent(header, _) => header.tag,
-            Vortex::DownloadPersistentCachePiece(header, _) => header.tag,
-            Vortex::PersistentCachePieceContent(header, _) => header.tag,
-            Vortex::Reserved(header) => header.tag,
-            Vortex::Close(header) => header.tag,
-            Vortex::Error(header, _) => header.tag,
-        }
-    }
-
-    /// length returns the length of the value field.
-    #[inline]
-    pub fn length(&self) -> usize {
-        match self {
-            Vortex::DownloadPiece(header, _) => header.length as usize,
-            Vortex::PieceContent(header, _) => header.length as usize,
-            Vortex::DownloadCachePiece(header, _) => header.length as usize,
-            Vortex::CachePieceContent(header, _) => header.length as usize,
-            Vortex::DownloadPersistentPiece(header, _) => header.length as usize,
-            Vortex::PersistentPieceContent(header, _) => header.length as usize,
-            Vortex::DownloadPersistentCachePiece(header, _) => header.length as usize,
-            Vortex::PersistentCachePieceContent(header, _) => header.length as usize,
-            Vortex::Reserved(header) => header.length as usize,
-            Vortex::Close(header) => header.length as usize,
-            Vortex::Error(header, _) => header.length as usize,
-        }
-    }
-
-    /// header returns a reference to the packet header.
-    #[inline]
+    /// Returns the packet header.
     pub fn header(&self) -> &Header {
         match self {
-            Vortex::DownloadPiece(header, _) => header,
-            Vortex::PieceContent(header, _) => header,
-            Vortex::DownloadCachePiece(header, _) => header,
-            Vortex::CachePieceContent(header, _) => header,
-            Vortex::DownloadPersistentPiece(header, _) => header,
-            Vortex::PersistentPieceContent(header, _) => header,
-            Vortex::DownloadPersistentCachePiece(header, _) => header,
-            Vortex::PersistentCachePieceContent(header, _) => header,
-            Vortex::Reserved(header) => header,
-            Vortex::Close(header) => header,
-            Vortex::Error(header, _) => header,
+            Vortex::DownloadPiece(header, _)
+            | Vortex::PieceContent(header, _)
+            | Vortex::DownloadCachePiece(header, _)
+            | Vortex::CachePieceContent(header, _)
+            | Vortex::DownloadPersistentPiece(header, _)
+            | Vortex::PersistentPieceContent(header, _)
+            | Vortex::DownloadPersistentCachePiece(header, _)
+            | Vortex::PersistentCachePieceContent(header, _)
+            | Vortex::Reserved(header)
+            | Vortex::Close(header)
+            | Vortex::Error(header, _) => header,
         }
     }
-}
 
-/// Implement TryFrom<Bytes> for Vortex.
-impl TryFrom<Bytes> for Vortex {
-    type Error = Error;
+    /// Returns the number of bytes appended by [Vortex::encode].
+    pub fn encoded_len(&self) -> usize {
+        HEADER_SIZE + self.value_len()
+    }
 
-    /// try_from converts a Bytes into a Vortex packet.
-    fn try_from(bytes: Bytes) -> Result<Self> {
-        if bytes.len() < HEADER_SIZE {
-            return Err(Error::InvalidPacket(format!(
-                "expected at least {HEADER_SIZE} bytes for header, got {}",
-                bytes.len()
-            )));
+    /// Appends the encoded packet to the buffer.
+    ///
+    /// The tag and the length are derived from the carried value, so a header built with a
+    /// placeholder length encodes correctly. Only the packet identifier is taken from the header.
+    pub fn encode(&self, buffer: &mut impl BufMut) {
+        let raw = RawHeader {
+            id: self.header().id,
+            tag: self.tag().into(),
+            length: U32::new(self.value_len() as u32),
+        };
+        buffer.put_slice(raw.as_bytes());
+
+        match self {
+            Vortex::DownloadPiece(_, value) => value.encode(buffer),
+            Vortex::PieceContent(_, value) => value.encode(buffer),
+            Vortex::DownloadCachePiece(_, value) => value.encode(buffer),
+            Vortex::CachePieceContent(_, value) => value.encode(buffer),
+            Vortex::DownloadPersistentPiece(_, value) => value.encode(buffer),
+            Vortex::PersistentPieceContent(_, value) => value.encode(buffer),
+            Vortex::DownloadPersistentCachePiece(_, value) => value.encode(buffer),
+            Vortex::PersistentCachePieceContent(_, value) => value.encode(buffer),
+            Vortex::Reserved(_) | Vortex::Close(_) => {}
+            Vortex::Error(_, value) => value.encode(buffer),
         }
+    }
 
-        let mut bytes = BytesMut::from(bytes);
-        let header = bytes.split_to(HEADER_SIZE);
-        let value = bytes.freeze();
-        let header: Header = header.freeze().try_into()?;
+    /// Decodes a whole packet, the header followed by exactly the declared value length.
+    pub fn decode(buffer: &[u8]) -> Result<Self> {
+        let (raw, value) = RawHeader::ref_from_prefix(buffer).map_err(|_| {
+            Error::InvalidPacket(format!(
+                "expected at least {HEADER_SIZE} bytes for header, got {}",
+                buffer.len()
+            ))
+        })?;
 
-        // Check if the value length matches the specified length.
+        let header = Header::from(raw);
         if value.len() != header.length as usize {
             return Err(Error::InvalidLength(format!(
-                "value len {} != declared length {}",
-                value.len(),
-                header.length
+                "expected {} bytes for value, got {}",
+                header.length,
+                value.len()
             )));
         }
 
-        (header.tag, header, value).try_into()
+        Ok(match header.tag {
+            Tag::DownloadPiece => Vortex::DownloadPiece(header, DownloadPiece::decode(value)?),
+            Tag::PieceContent => Vortex::PieceContent(header, PieceContent::decode(value)?),
+            Tag::DownloadCachePiece => {
+                Vortex::DownloadCachePiece(header, DownloadCachePiece::decode(value)?)
+            }
+            Tag::CachePieceContent => {
+                Vortex::CachePieceContent(header, CachePieceContent::decode(value)?)
+            }
+            Tag::DownloadPersistentPiece => {
+                Vortex::DownloadPersistentPiece(header, DownloadPersistentPiece::decode(value)?)
+            }
+            Tag::PersistentPieceContent => {
+                Vortex::PersistentPieceContent(header, PersistentPieceContent::decode(value)?)
+            }
+            Tag::DownloadPersistentCachePiece => Vortex::DownloadPersistentCachePiece(
+                header,
+                DownloadPersistentCachePiece::decode(value)?,
+            ),
+            Tag::PersistentCachePieceContent => Vortex::PersistentCachePieceContent(
+                header,
+                PersistentCachePieceContent::decode(value)?,
+            ),
+            Tag::Reserved(_) => Vortex::Reserved(header),
+            Tag::Close => Vortex::Close(header),
+            Tag::Error => Vortex::Error(header, tlv::error::Error::decode(value)?),
+        })
     }
-}
 
-/// Implement From<Vortex> for Bytes.
-impl From<Vortex> for Bytes {
-    /// from converts a Vortex packet to Bytes.
-    fn from(packet: Vortex) -> Self {
-        let (header, value) = match packet {
-            Vortex::DownloadPiece(header, download_piece) => (header, download_piece.into()),
-            Vortex::PieceContent(header, piece_content) => (header, piece_content.into()),
-            Vortex::DownloadCachePiece(header, download_cache_piece) => {
-                (header, download_cache_piece.into())
-            }
-            Vortex::CachePieceContent(header, cache_piece_content) => {
-                (header, cache_piece_content.into())
-            }
-            Vortex::DownloadPersistentPiece(header, download_persistent_piece) => {
-                (header, download_persistent_piece.into())
-            }
-            Vortex::PersistentPieceContent(header, persistent_piece_content) => {
-                (header, persistent_piece_content.into())
-            }
-            Vortex::DownloadPersistentCachePiece(header, download_persistent_cache_piece) => {
-                (header, download_persistent_cache_piece.into())
-            }
-            Vortex::PersistentCachePieceContent(header, persistent_cache_piece_content) => {
-                (header, persistent_cache_piece_content.into())
-            }
-            Vortex::Reserved(header) => (header, Bytes::new()),
-            Vortex::Close(header) => (header, Bytes::new()),
-            Vortex::Error(header, err) => (header, err.into()),
-        };
-
-        let mut bytes = BytesMut::with_capacity(HEADER_SIZE + value.len());
-        bytes.put_u8(header.id);
-        bytes.put_u8(header.tag.into());
-        bytes.put_u32(value.len() as u32);
-        bytes.extend_from_slice(&value);
-        bytes.freeze()
-    }
-}
-
-/// Implement TryFrom<(tlv::Tag, Header, Bytes)> for Vortex.
-impl TryFrom<(tlv::Tag, Header, Bytes)> for Vortex {
-    type Error = Error;
-
-    /// try_from converts a tuple of Tag, Header, and Bytes into a Vortex packet.
-    fn try_from((tag, header, value): (tlv::Tag, Header, Bytes)) -> Result<Self> {
-        if value.len() > MAX_VALUE_SIZE {
-            return Err(Error::InvalidLength(format!(
-                "value length {} exceeds maximum allowed size of {} bytes",
-                value.len(),
-                MAX_VALUE_SIZE
-            )));
+    /// Returns the tag of the carried value.
+    fn tag(&self) -> Tag {
+        match self {
+            Vortex::DownloadPiece(..) => DownloadPiece::TAG,
+            Vortex::PieceContent(..) => PieceContent::TAG,
+            Vortex::DownloadCachePiece(..) => DownloadCachePiece::TAG,
+            Vortex::CachePieceContent(..) => CachePieceContent::TAG,
+            Vortex::DownloadPersistentPiece(..) => DownloadPersistentPiece::TAG,
+            Vortex::PersistentPieceContent(..) => PersistentPieceContent::TAG,
+            Vortex::DownloadPersistentCachePiece(..) => DownloadPersistentCachePiece::TAG,
+            Vortex::PersistentCachePieceContent(..) => PersistentCachePieceContent::TAG,
+            Vortex::Reserved(header) => header.tag,
+            Vortex::Close(_) => Tag::Close,
+            Vortex::Error(..) => tlv::error::Error::TAG,
         }
+    }
 
-        match tag {
-            tlv::Tag::DownloadPiece => {
-                let download_piece = tlv::download_piece::DownloadPiece::try_from(value)?;
-                Ok(Vortex::DownloadPiece(header, download_piece))
-            }
-            tlv::Tag::DownloadCachePiece => {
-                let download_cache_piece =
-                    tlv::download_cache_piece::DownloadCachePiece::try_from(value)?;
-                Ok(Vortex::DownloadCachePiece(header, download_cache_piece))
-            }
-            tlv::Tag::PieceContent => {
-                let piece_content = tlv::piece_content::PieceContent::try_from(value)?;
-                Ok(Vortex::PieceContent(header, piece_content))
-            }
-            tlv::Tag::DownloadPersistentPiece => {
-                let download_persistent_piece =
-                    tlv::download_persistent_piece::DownloadPersistentPiece::try_from(value)?;
-                Ok(Vortex::DownloadPersistentPiece(
-                    header,
-                    download_persistent_piece,
-                ))
-            }
-            tlv::Tag::PersistentPieceContent => {
-                let persistent_piece_content =
-                    tlv::persistent_piece_content::PersistentPieceContent::try_from(value)?;
-                Ok(Vortex::PersistentPieceContent(
-                    header,
-                    persistent_piece_content,
-                ))
-            }
-            tlv::Tag::DownloadPersistentCachePiece => {
-                let download_persistent_cache_piece =
-                    tlv::download_persistent_cache_piece::DownloadPersistentCachePiece::try_from(
-                        value,
-                    )?;
-                Ok(Vortex::DownloadPersistentCachePiece(
-                    header,
-                    download_persistent_cache_piece,
-                ))
-            }
-            tlv::Tag::PersistentCachePieceContent => {
-                let persistent_cache_piece_content =
-                    tlv::persistent_cache_piece_content::PersistentCachePieceContent::try_from(
-                        value,
-                    )?;
-                Ok(Vortex::PersistentCachePieceContent(
-                    header,
-                    persistent_cache_piece_content,
-                ))
-            }
-            tlv::Tag::CachePieceContent => {
-                let cache_piece_content =
-                    tlv::cache_piece_content::CachePieceContent::try_from(value)?;
-                Ok(Vortex::CachePieceContent(header, cache_piece_content))
-            }
-            tlv::Tag::Reserved(_) => Ok(Vortex::Reserved(header)),
-            tlv::Tag::Close => Ok(Vortex::Close(header)),
-            tlv::Tag::Error => {
-                let err = tlv::error::Error::try_from(value)?;
-                Ok(Vortex::Error(header, err))
-            }
+    /// Returns the encoded length of the carried value.
+    fn value_len(&self) -> usize {
+        match self {
+            Vortex::DownloadPiece(_, value) => value.encoded_len(),
+            Vortex::PieceContent(_, value) => value.encoded_len(),
+            Vortex::DownloadCachePiece(_, value) => value.encoded_len(),
+            Vortex::CachePieceContent(_, value) => value.encoded_len(),
+            Vortex::DownloadPersistentPiece(_, value) => value.encoded_len(),
+            Vortex::PersistentPieceContent(_, value) => value.encoded_len(),
+            Vortex::DownloadPersistentCachePiece(_, value) => value.encoded_len(),
+            Vortex::PersistentCachePieceContent(_, value) => value.encoded_len(),
+            Vortex::Reserved(_) | Vortex::Close(_) => 0,
+            Vortex::Error(_, value) => value.encoded_len(),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::type_complexity)]
+
     use super::*;
-    use crate::tlv::Tag;
-    use bytes::Bytes;
-    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use crate::tlv::error::Code;
+    use crate::tlv::piece_metadata::PieceMetadata;
+    use crate::tlv::{PIECE_NUMBER_SIZE, TASK_ID_SIZE};
+    use bytes::BytesMut;
+    use chrono::DateTime;
+    use proptest::prelude::*;
+    use std::time::Duration;
 
-    #[test]
-    fn test_header_new() {
-        let tag = Tag::DownloadPiece;
-        let value_length = 1024;
-        let header = Header::new(tag, value_length);
+    fn arb_metadata() -> impl Strategy<Value = PieceMetadata> {
+        (
+            any::<u32>(),
+            any::<u64>(),
+            any::<u64>(),
+            "[a-z0-9:]{0,80}",
+            "[a-z0-9.-]{0,80}",
+            any::<u8>(),
+            any::<u64>(),
+            0i64..253_402_300_799,
+        )
+            .prop_map(
+                |(number, offset, length, digest, parent_id, traffic_type, cost, created_at)| {
+                    PieceMetadata {
+                        number,
+                        offset,
+                        length,
+                        digest,
+                        parent_id,
+                        traffic_type,
+                        cost: Duration::from_secs(cost),
+                        created_at: DateTime::from_timestamp(created_at, 0).unwrap().naive_utc(),
+                    }
+                },
+            )
+    }
 
-        assert_eq!(header.tag, tag);
-        assert_eq!(header.length, value_length);
+    fn arb_packet() -> impl Strategy<Value = Vortex> {
+        prop_oneof![
+            ("[0-9a-f]{64}", any::<u32>()).prop_map(|(task_id, piece_number)| {
+                let request = DownloadPiece::new(task_id, piece_number);
+                let header = Header::new(DownloadPiece::TAG, request.encoded_len() as u32);
+                Vortex::DownloadPiece(header, request)
+            }),
+            arb_metadata().prop_map(|metadata| {
+                let content = PieceContent { metadata };
+                let header = Header::new(PieceContent::TAG, content.encoded_len() as u32);
+                Vortex::PieceContent(header, content)
+            }),
+            (8u8..=253).prop_map(|tag| Vortex::Reserved(Header::new(Tag::Reserved(tag), 0))),
+            Just(Vortex::Close(Header::new(Tag::Close, 0))),
+            (any::<u8>(), ".{0,64}").prop_map(|(code, message)| {
+                let error = tlv::error::Error::new(Code::from(code), message);
+                let header = Header::new(tlv::error::Error::TAG, error.encoded_len() as u32);
+                Vortex::Error(header, error)
+            }),
+        ]
     }
 
     #[test]
-    fn test_header_try_from_bytes_success() {
-        let mut bytes = BytesMut::with_capacity(HEADER_SIZE);
-        bytes.put_u8(42);
-        bytes.put_u8(Tag::DownloadPiece.into());
-        bytes.put_u32(1024);
-        let bytes = bytes.freeze();
-        let header = Header::try_from(bytes).unwrap();
+    fn header_encode_writes_the_wire_layout() {
+        let header = Header::new(Tag::Close, 0x0102_0304);
+        let mut buffer = BytesMut::new();
+        header.encode(&mut buffer);
 
-        assert_eq!(header.id, 42);
-        assert_eq!(header.tag, Tag::DownloadPiece);
-        assert_eq!(header.length, 1024);
+        assert_eq!(buffer.len(), HEADER_SIZE);
+        assert_eq!(buffer[0], header.id());
+        assert_eq!(buffer[1], 254);
+        assert_eq!(&buffer[2..], [1, 2, 3, 4]);
     }
 
     #[test]
-    fn test_header_try_from_bytes_invalid_size() {
-        let bytes = Bytes::from(vec![1, 2, 3]);
-        let result = Header::try_from(bytes);
-        assert!(matches!(result, Err(Error::InvalidPacket(_))));
+    fn header_decode_roundtrips_every_tag() {
+        let test_cases = vec![
+            (Tag::DownloadPiece, 0),
+            (Tag::PieceContent, 1024),
+            (Tag::Reserved(42), u32::MAX),
+            (Tag::Close, 0),
+            (Tag::Error, 7),
+        ];
+
+        for (tag, length) in test_cases {
+            let header = Header::new(tag, length);
+            let mut buffer = BytesMut::new();
+            header.encode(&mut buffer);
+            assert_eq!(Header::decode(&buffer).unwrap(), header);
+        }
     }
 
     #[test]
-    fn test_header_to_bytes() {
-        let tag = Tag::Close;
-        let header = Header {
-            id: 123,
-            tag,
-            length: 2048,
-        };
-        let bytes: Bytes = header.into();
+    fn header_decode_rejects_other_sizes() {
+        let test_cases = vec![0, HEADER_SIZE - 1, HEADER_SIZE + 1];
 
-        assert_eq!(bytes.len(), HEADER_SIZE);
-        assert_eq!(bytes[0], 123);
-        assert_eq!(bytes[1], tag.into());
+        for len in test_cases {
+            assert!(matches!(
+                Header::decode(&vec![0; len]),
+                Err(Error::InvalidPacket(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn encode_packet_prepends_the_header() {
+        let request = DownloadPiece::new("a".repeat(TASK_ID_SIZE), 7);
+        let mut buffer = BytesMut::new();
+        request.encode_packet(&mut buffer);
+
+        let header = Header::decode(&buffer[..HEADER_SIZE]).unwrap();
+        assert_eq!(header.tag(), Tag::DownloadPiece);
+        assert_eq!(header.length() as usize, TASK_ID_SIZE + PIECE_NUMBER_SIZE);
         assert_eq!(
-            u32::from_be_bytes(bytes[2..HEADER_SIZE].try_into().unwrap()),
-            2048
+            DownloadPiece::decode(&buffer[HEADER_SIZE..]).unwrap(),
+            request
         );
     }
 
     #[test]
-    fn test_new_download_piece() {
-        let tag = Tag::DownloadPiece;
-        let mut value = BytesMut::with_capacity(68);
-        value.extend_from_slice("a".repeat(64).as_bytes());
-        value.put_u32(42);
-        let packet = Vortex::new(tag, value.clone().freeze()).unwrap();
+    fn vortex_encode_derives_the_tag_and_length_from_the_value() {
+        let request = DownloadPiece::new("a".repeat(TASK_ID_SIZE), 7);
+        let packet = Vortex::DownloadPiece(Header::new(Tag::Close, 0), request.clone());
+        let mut buffer = BytesMut::new();
+        packet.encode(&mut buffer);
 
-        assert_eq!(packet.id(), packet.id());
-        assert_eq!(packet.tag(), tag);
-        assert_eq!(packet.length(), value.len());
+        assert_eq!(buffer.len(), packet.encoded_len());
+        let header = Header::decode(&buffer[..HEADER_SIZE]).unwrap();
+        assert_eq!(header.id(), packet.header().id());
+        assert_eq!(header.tag(), Tag::DownloadPiece);
+        assert_eq!(header.length() as usize, request.encoded_len());
     }
 
     #[test]
-    fn test_close() {
-        let tag = Tag::Close;
-        let value = Bytes::new();
-        let packet = Vortex::new(tag, value.clone()).unwrap();
-
-        assert_eq!(packet.tag(), tag);
-        assert_eq!(packet.length(), value.len());
-    }
-
-    #[test]
-    fn test_error_handling() {
-        let value = vec![0; MAX_VALUE_SIZE + 1];
-        let result = Vortex::new(Tag::PieceContent, value.into());
-
-        assert!(matches!(result, Err(Error::InvalidLength(_))));
-    }
-
-    #[test]
-    fn test_vortex_try_from_bytes_success() {
-        let tag = Tag::Close;
-        let header = Header::new(tag, 0);
-        let header_bytes: Bytes = header.clone().into();
-        let value = Bytes::new();
-
-        let mut packet_bytes = BytesMut::new();
-        packet_bytes.extend_from_slice(&header_bytes);
-        packet_bytes.extend_from_slice(&value);
-        let packet = Vortex::try_from(packet_bytes.freeze()).unwrap();
-
-        assert_eq!(packet.tag(), tag);
-        assert_eq!(packet.length(), 0);
-    }
-
-    #[test]
-    fn test_vortex_try_from_bytes_length_mismatch() {
-        let tag = Tag::Close;
-        let header = Header {
-            id: 1,
-            tag,
-            length: 5,
+    fn vortex_decode_roundtrips_every_variant() {
+        let request = DownloadPiece::new("a".repeat(TASK_ID_SIZE), 7);
+        let metadata = PieceMetadata {
+            number: 42,
+            offset: 1024,
+            length: 2048,
+            digest: "crc32:864bbb04".to_string(),
+            parent_id: "127.0.0.1-foo".to_string(),
+            traffic_type: 1,
+            cost: Duration::from_secs(30),
+            created_at: DateTime::from_timestamp(1_700_000_000, 0)
+                .unwrap()
+                .naive_utc(),
         };
-        let header_bytes: Bytes = header.into();
-        let value = Bytes::from("test");
+        let error = tlv::error::Error::new(Code::NotFound, "missing".to_string());
+        let test_cases = vec![
+            Vortex::DownloadPiece(Header::new(Tag::DownloadPiece, 68), request.clone()),
+            Vortex::PieceContent(
+                Header::new(Tag::PieceContent, 0),
+                PieceContent {
+                    metadata: metadata.clone(),
+                },
+            ),
+            Vortex::DownloadCachePiece(
+                Header::new(Tag::DownloadCachePiece, 68),
+                DownloadCachePiece::new(request.task_id.clone(), 8),
+            ),
+            Vortex::CachePieceContent(
+                Header::new(Tag::CachePieceContent, 0),
+                CachePieceContent {
+                    metadata: metadata.clone(),
+                },
+            ),
+            Vortex::DownloadPersistentPiece(
+                Header::new(Tag::DownloadPersistentPiece, 68),
+                DownloadPersistentPiece::new(request.task_id.clone(), 9),
+            ),
+            Vortex::PersistentPieceContent(
+                Header::new(Tag::PersistentPieceContent, 0),
+                PersistentPieceContent {
+                    metadata: metadata.clone(),
+                },
+            ),
+            Vortex::DownloadPersistentCachePiece(
+                Header::new(Tag::DownloadPersistentCachePiece, 68),
+                DownloadPersistentCachePiece::new(request.task_id.clone(), 10),
+            ),
+            Vortex::PersistentCachePieceContent(
+                Header::new(Tag::PersistentCachePieceContent, 0),
+                PersistentCachePieceContent {
+                    metadata: metadata.clone(),
+                },
+            ),
+            Vortex::Reserved(Header::new(Tag::Reserved(42), 0)),
+            Vortex::Close(Header::new(Tag::Close, 0)),
+            Vortex::Error(Header::new(Tag::Error, 0), error),
+        ];
 
-        let mut packet_bytes = BytesMut::new();
-        packet_bytes.extend_from_slice(&header_bytes);
-        packet_bytes.extend_from_slice(&value);
-        let result = Vortex::try_from(packet_bytes.freeze());
+        for packet in test_cases {
+            let mut buffer = BytesMut::new();
+            packet.encode(&mut buffer);
+            let decoded = Vortex::decode(&buffer).unwrap();
 
-        assert!(matches!(result, Err(Error::InvalidLength(_))));
-    }
-
-    #[test]
-    fn test_vortex_try_from_bytes_short_header_returns_error() {
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            Vortex::try_from(Bytes::from_static(&[1, 2, 3]))
-        }));
-
-        assert!(result.is_ok(), "Vortex::try_from should not panic");
-        assert!(matches!(
-            result.unwrap(),
-            Err(Error::InvalidPacket(message))
-                if message == "expected at least 6 bytes for header, got 3"
-        ));
-    }
-
-    #[test]
-    fn test_vortex_to_bytes_download_piece() {
-        let tag = Tag::DownloadPiece;
-        let mut value = BytesMut::with_capacity(68);
-        value.extend_from_slice("a".repeat(64).as_bytes());
-        value.put_u32(42);
-        let packet = Vortex::new(tag, value.clone().freeze()).unwrap();
-        let bytes: Bytes = packet.into();
-
-        assert_eq!(bytes.len(), HEADER_SIZE + value.len());
-    }
-
-    #[test]
-    fn test_vortex_to_bytes_download_cache_piece() {
-        let tag = Tag::DownloadCachePiece;
-        let mut value = BytesMut::with_capacity(68);
-        value.extend_from_slice("a".repeat(64).as_bytes());
-        value.put_u32(42);
-        let packet = Vortex::new(tag, value.clone().freeze()).unwrap();
-        let bytes: Bytes = packet.into();
-
-        assert_eq!(bytes.len(), HEADER_SIZE + value.len());
-    }
-
-    #[test]
-    fn test_vortex_to_bytes_download_persistent_piece() {
-        let tag = Tag::DownloadPersistentPiece;
-        let mut value = BytesMut::with_capacity(68);
-        value.extend_from_slice("a".repeat(64).as_bytes());
-        value.put_u32(42);
-        let packet = Vortex::new(tag, value.clone().freeze()).unwrap();
-        let bytes: Bytes = packet.into();
-
-        assert_eq!(bytes.len(), HEADER_SIZE + value.len());
-    }
-
-    #[test]
-    fn test_vortex_to_bytes_download_persistent_cache_piece() {
-        let tag = Tag::DownloadPersistentCachePiece;
-        let mut value = BytesMut::with_capacity(68);
-        value.extend_from_slice("a".repeat(64).as_bytes());
-        value.put_u32(42);
-        let packet = Vortex::new(tag, value.clone().freeze()).unwrap();
-        let bytes: Bytes = packet.into();
-
-        assert_eq!(bytes.len(), HEADER_SIZE + value.len());
-    }
-
-    #[test]
-    fn test_vortex_to_bytes_reserved() {
-        let tag = Tag::Reserved(50);
-        let packet = Vortex::new(tag, Bytes::new()).unwrap();
-        let bytes: Bytes = packet.into();
-
-        assert_eq!(bytes.len(), HEADER_SIZE);
-    }
-
-    #[test]
-    fn test_vortex_to_bytes_close() {
-        let tag = Tag::Close;
-        let packet = Vortex::new(tag, Bytes::new()).unwrap();
-        let bytes: Bytes = packet.into();
-
-        assert_eq!(bytes.len(), HEADER_SIZE);
-    }
-
-    #[test]
-    fn test_vortex_to_bytes_error() {
-        let tag = Tag::Error;
-        let value = Bytes::from("error details");
-        let packet = Vortex::new(tag, value.clone()).unwrap();
-        let bytes: Bytes = packet.into();
-
-        assert_eq!(bytes.len(), HEADER_SIZE + value.len());
-    }
-
-    #[test]
-    fn test_vortex_piece_content_roundtrip() {
-        let content = tlv::piece_content::PieceContent::new(
-            1,
-            2,
-            3,
-            "crc32:864bbb04".to_string(),
-            "127.0.0.1-foo".to_string(),
-            1,
-            std::time::Duration::from_secs(30),
-            chrono::Utc::now().naive_utc(),
-        );
-        let value: Bytes = content.clone().into();
-        let packet = Vortex::PieceContent(Header::new_piece_content(value.len() as u32), content);
-        let bytes: Bytes = packet.into();
-        let decoded = Vortex::try_from(bytes).unwrap();
-
-        match decoded {
-            Vortex::PieceContent(header, decoded_content) => {
-                assert_eq!(header.tag(), Tag::PieceContent);
-                assert_eq!(header.length(), value.len() as u32);
-                assert_eq!(decoded_content.metadata_len(), value.len() as u32 - 4);
-            }
-            _ => panic!("expected PieceContent packet"),
+            assert_eq!(buffer.len(), packet.encoded_len());
+            assert_eq!(decoded.header().id(), packet.header().id());
+            assert_eq!(decoded.header().tag(), packet.header().tag());
+            assert_eq!(
+                decoded.header().length() as usize,
+                buffer.len() - HEADER_SIZE
+            );
+            assert_eq!(decoded.encoded_len(), packet.encoded_len());
         }
     }
 
     #[test]
-    fn test_vortex_cache_piece_content_roundtrip() {
-        let content = tlv::cache_piece_content::CachePieceContent::new(
-            1,
-            2,
-            3,
-            "crc32:864bbb04".to_string(),
-            "127.0.0.1-foo".to_string(),
-            1,
-            std::time::Duration::from_secs(30),
-            chrono::Utc::now().naive_utc(),
-        );
-        let value: Bytes = content.clone().into();
-        let packet =
-            Vortex::CachePieceContent(Header::new_cache_piece_content(value.len() as u32), content);
-        let bytes: Bytes = packet.into();
-        let decoded = Vortex::try_from(bytes).unwrap();
+    fn vortex_decode_rejects_malformed_packets() {
+        let mut declared_but_missing = BytesMut::new();
+        Header::new(Tag::Close, 1).encode(&mut declared_but_missing);
+        let mut undersized_value = BytesMut::new();
+        Header::new(Tag::DownloadPiece, 3).encode(&mut undersized_value);
+        undersized_value.extend_from_slice(&[0; 3]);
+        let mut invalid_value = BytesMut::new();
+        Header::new(
+            Tag::DownloadPiece,
+            (TASK_ID_SIZE + PIECE_NUMBER_SIZE) as u32,
+        )
+        .encode(&mut invalid_value);
+        invalid_value.extend_from_slice(&[0xFF; TASK_ID_SIZE + PIECE_NUMBER_SIZE]);
 
-        match decoded {
-            Vortex::CachePieceContent(header, decoded_content) => {
-                assert_eq!(header.tag(), Tag::CachePieceContent);
-                assert_eq!(header.length(), value.len() as u32);
-                assert_eq!(decoded_content.metadata_len(), value.len() as u32 - 4);
-            }
-            _ => panic!("expected CachePieceContent packet"),
+        let test_cases: Vec<(Vec<u8>, fn(Result<Vortex>))> = vec![
+            (vec![0; HEADER_SIZE - 1], |result| {
+                assert!(matches!(result, Err(Error::InvalidPacket(_))))
+            }),
+            (declared_but_missing.to_vec(), |result| {
+                assert!(matches!(result, Err(Error::InvalidLength(_))))
+            }),
+            (undersized_value.to_vec(), |result| {
+                assert!(matches!(result, Err(Error::InvalidLength(_))))
+            }),
+            (invalid_value.to_vec(), |result| {
+                assert!(matches!(result, Err(Error::FromUtf8Error(_))))
+            }),
+        ];
+
+        for (buffer, expect) in test_cases {
+            expect(Vortex::decode(&buffer));
         }
     }
 
     #[test]
-    fn test_vortex_persistent_piece_content_roundtrip() {
-        let content = tlv::persistent_piece_content::PersistentPieceContent::new(
-            1,
-            2,
-            3,
-            "crc32:864bbb04".to_string(),
-            "127.0.0.1-foo".to_string(),
-            1,
-            std::time::Duration::from_secs(30),
-            chrono::Utc::now().naive_utc(),
-        );
-        let value: Bytes = content.clone().into();
-        let packet = Vortex::PersistentPieceContent(
-            Header::new_persistent_piece_content(value.len() as u32),
-            content,
-        );
-        let bytes: Bytes = packet.into();
-        let decoded = Vortex::try_from(bytes).unwrap();
+    fn vortex_decode_ignores_the_value_of_reserved_and_close_packets() {
+        let test_cases = vec![(Tag::Reserved(42), 5), (Tag::Close, 3)];
 
-        match decoded {
-            Vortex::PersistentPieceContent(header, decoded_content) => {
-                assert_eq!(header.tag(), Tag::PersistentPieceContent);
-                assert_eq!(header.length(), value.len() as u32);
-                assert_eq!(decoded_content.metadata_len(), value.len() as u32 - 4);
-            }
-            _ => panic!("expected PersistentPieceContent packet"),
+        for (tag, length) in test_cases {
+            let header = Header::new(tag, length);
+            let mut buffer = BytesMut::new();
+            header.encode(&mut buffer);
+            buffer.extend_from_slice(&vec![0xAB; length as usize]);
+
+            let packet = Vortex::decode(&buffer).unwrap();
+            assert_eq!(packet.header(), &header);
+            assert_eq!(packet.encoded_len(), HEADER_SIZE);
         }
     }
 
-    #[test]
-    fn test_vortex_persistent_cache_piece_content_roundtrip() {
-        let content = tlv::persistent_cache_piece_content::PersistentCachePieceContent::new(
-            1,
-            2,
-            3,
-            "crc32:864bbb04".to_string(),
-            "127.0.0.1-foo".to_string(),
-            1,
-            std::time::Duration::from_secs(30),
-            chrono::Utc::now().naive_utc(),
-        );
-        let value: Bytes = content.clone().into();
-        let packet = Vortex::PersistentCachePieceContent(
-            Header::new_persistent_cache_piece_content(value.len() as u32),
-            content,
-        );
-        let bytes: Bytes = packet.into();
-        let decoded = Vortex::try_from(bytes).unwrap();
+    proptest! {
+        #![proptest_config(ProptestConfig {
+            cases: 200,
+            max_shrink_iters: 0,
+            failure_persistence: None,
+            ..ProptestConfig::default()
+        })]
 
-        match decoded {
-            Vortex::PersistentCachePieceContent(header, decoded_content) => {
-                assert_eq!(header.tag(), Tag::PersistentCachePieceContent);
-                assert_eq!(header.length(), value.len() as u32);
-                assert_eq!(decoded_content.metadata_len(), value.len() as u32 - 4);
-            }
-            _ => panic!("expected PersistentCachePieceContent packet"),
+        #[test]
+        fn vortex_roundtrips_arbitrary_packets(packet in arb_packet()) {
+            let mut buffer = BytesMut::new();
+            packet.encode(&mut buffer);
+            prop_assert_eq!(buffer.len(), packet.encoded_len());
+
+            let header = Header::decode(&buffer[..HEADER_SIZE])?;
+            prop_assert_eq!(header.id(), packet.header().id());
+            prop_assert_eq!(header.length() as usize, buffer.len() - HEADER_SIZE);
+
+            let decoded = Vortex::decode(&buffer)?;
+            prop_assert_eq!(&decoded, &packet);
+
+            let mut encoded = BytesMut::new();
+            decoded.encode(&mut encoded);
+            prop_assert_eq!(encoded, buffer);
         }
-    }
 
-    #[test]
-    fn test_max_value_size_boundary() {
-        let tag = Tag::Reserved(50);
-        let value = vec![0; MAX_VALUE_SIZE];
-        let result = Vortex::new(tag, value.into());
-
-        assert!(result.is_ok());
+        #[test]
+        fn vortex_decode_rejects_truncated_packets(packet in arb_packet(), cut in 1usize..64) {
+            let mut buffer = BytesMut::new();
+            packet.encode(&mut buffer);
+            prop_assume!(cut <= buffer.len());
+            prop_assert!(Vortex::decode(&buffer[..buffer.len() - cut]).is_err());
+        }
     }
 }

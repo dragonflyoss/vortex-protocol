@@ -1,19 +1,21 @@
 [package]
 name = "vortex-protocol"
-version = "0.1.5"
+version = "0.2.0"
 description = "A P2P file transfer protocol"
 authors = ["The Dragonfly Developers"]
 homepage = "https://d7y.io/"
-repository = "https://github.com/dragonflyoss/vortex.git"
+repository = "https://github.com/dragonflyoss/vortex-protocol.git"
 keywords = ["dragonfly", "p2p"]
 license = "Apache-2.0"
 readme = "README.md"
 edition = "2021"
+rust-version = "1.80"
 
 [dependencies]
 thiserror = "2.0"
 rand = "0.8"
 bytes = "1"
+zerocopy = { version = "0.8", features = ["derive"] }
 chrono = { version = "0.4.44", features = ["serde", "clock"] }
 
 [dev-dependencies]
