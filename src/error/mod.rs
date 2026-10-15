@@ -14,37 +14,21 @@
  * limitations under the License.
  */
 
-/// Error is the error type for the Vortex protocol.
+/// The error of the Vortex protocol.
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    /// InvalidPacket indicates an invalid Vortex packet.
+    /// The error when a packet or a value is malformed.
     #[error("invalid vortex packet, cause: {0}")]
     InvalidPacket(String),
 
-    /// InvalidLength indicates an invalid length.
+    /// The error when a length does not match the declared or expected size.
     #[error("invalid length, cause: {0}")]
     InvalidLength(String),
 
-    /// InvalidTag indicates an invalid tag.
-    #[error("invalid tag: {0}")]
-    InvalidTag(String),
-
-    /// TryFromSliceError indicates a conversion error.
-    #[error(transparent)]
-    TryFromSliceError(#[from] std::array::TryFromSliceError),
-
-    /// Utf8Error indicates a conversion error.
-    #[error(transparent)]
-    Utf8Error(#[from] std::str::Utf8Error),
-
-    /// ParseIntError indicates a conversion error.
-    #[error(transparent)]
-    ParseIntError(#[from] std::num::ParseIntError),
-
-    /// FromUtf8Error indicates a conversion error.
+    /// The error when a text field is not valid UTF-8.
     #[error(transparent)]
     FromUtf8Error(#[from] std::string::FromUtf8Error),
 }
 
-/// Result is the result type for the Vortex protocol.
+/// The result of the Vortex protocol.
 pub type Result<T> = std::result::Result<T, Error>;

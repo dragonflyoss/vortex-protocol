@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
-use crate::error::{Error as VortexError, Result as VortexResult};
-use bytes::{BufMut, Bytes, BytesMut};
+use crate::error::{Error as VortexError, Result};
+use crate::tlv::Tag;
+use crate::Message;
+use bytes::BufMut;
 
-/// CODE_SIZE is the size of the error code in bytes.
+/// The size of the error code in bytes.
 const CODE_SIZE: usize = 1;
 
-/// Code represents a error code.
+/// The error code.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Code {
@@ -36,29 +38,27 @@ pub enum Code {
     /// Internal error, such as an unexpected error.
     Internal = 3,
 
-    /// Reserved for future use.
-    Reserved(u8), // For tags 4-253
+    /// Reserved for future use, for codes 4-255.
+    Reserved(u8),
 }
 
-/// Implement TryFrom<u8> for Code.
-impl TryFrom<u8> for Code {
-    type Error = VortexError;
-
-    /// Converts a u8 to a Code enum.
-    fn try_from(value: u8) -> VortexResult<Self> {
+/// Implements the conversion from the wire byte.
+impl From<u8> for Code {
+    /// Converts the wire byte into the code.
+    fn from(value: u8) -> Self {
         match value {
-            0 => Ok(Code::Unknown),
-            1 => Ok(Code::InvalidArgument),
-            2 => Ok(Code::NotFound),
-            3 => Ok(Code::Internal),
-            4..=255 => Ok(Code::Reserved(value)),
+            0 => Code::Unknown,
+            1 => Code::InvalidArgument,
+            2 => Code::NotFound,
+            3 => Code::Internal,
+            4..=255 => Code::Reserved(value),
         }
     }
 }
 
-/// Implement From<Code> for u8.
+/// Implements the conversion into the wire byte.
 impl From<Code> for u8 {
-    /// Converts a Code enum to a u8.
+    /// Converts the code into the wire byte.
     fn from(code: Code) -> u8 {
         match code {
             Code::Unknown => 0,
@@ -70,136 +70,124 @@ impl From<Code> for u8 {
     }
 }
 
-/// Error represents a error request.
-///
-/// Value Format:
-///  - Error Code (1 bytes): Error code.
-///  - Error Message (variable): Error message.
+/// The error message.
 ///
 /// ```text
 /// -------------------------------------------------
 /// | Error Code (1 bytes) |      Error Message      |
 /// -------------------------------------------------
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error {
-    code: Code,
-    message: String,
+    /// The error code.
+    pub code: Code,
+
+    /// The human-readable error message.
+    pub message: String,
 }
 
-/// Error implements the Error functions.
+/// Implements the error message.
 impl Error {
-    /// new creates a new Error request.
+    /// Creates an error message.
     pub fn new(code: Code, message: String) -> Self {
         Self { code, message }
     }
-
-    /// code returns the error code.
-    pub fn code(&self) -> Code {
-        self.code
-    }
-
-    /// message returns the error message.
-    pub fn message(&self) -> &str {
-        &self.message
-    }
-
-    /// len returns the length of the error request, including the error code, error
-    /// message.
-    pub fn len(&self) -> usize {
-        self.message.len() + CODE_SIZE
-    }
-
-    /// is_empty returns whether the error request is empty.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
 }
 
-/// Implement From<Error> for Bytes.
-impl From<Error> for Bytes {
-    /// from converts the error request to a byte slice.
-    fn from(err: Error) -> Self {
-        let mut bytes = BytesMut::with_capacity(err.len());
-        bytes.put_u8(err.code.into());
-        bytes.extend_from_slice(err.message.as_bytes());
-        bytes.freeze()
+/// Implements the packet value.
+impl Message for Error {
+    /// The tag of the packets carrying the error message.
+    const TAG: Tag = Tag::Error;
+
+    /// Returns the encoded length of the error message.
+    fn encoded_len(&self) -> usize {
+        CODE_SIZE + self.message.len()
     }
-}
 
-/// Implement TryFrom<Bytes> for Error.
-impl TryFrom<Bytes> for Error {
-    type Error = VortexError;
+    /// Appends the encoded error message to the buffer.
+    fn encode(&self, buffer: &mut impl BufMut) {
+        buffer.put_u8(self.code.into());
+        buffer.put_slice(self.message.as_bytes());
+    }
 
-    /// try_from decodes the error request from the byte slice.
-    fn try_from(bytes: Bytes) -> VortexResult<Self> {
-        if bytes.len() < CODE_SIZE {
-            return Err(VortexError::InvalidLength(format!(
-                "expected at least {} bytes for Error, got {}",
-                CODE_SIZE,
-                bytes.len()
-            )));
-        }
+    /// Decodes the error message from the value of a packet.
+    fn decode(buffer: &[u8]) -> Result<Self> {
+        let (code, message) = buffer.split_first().ok_or_else(|| {
+            VortexError::InvalidLength(format!(
+                "expected at least {CODE_SIZE} bytes for Error, got {}",
+                buffer.len()
+            ))
+        })?;
 
-        Ok(Error {
-            code: Code::try_from(
-                bytes
-                    .first()
-                    .ok_or(VortexError::InvalidPacket(
-                        "insufficient bytes for code".to_string(),
-                    ))?
-                    .to_owned(),
-            )?,
-            message: String::from_utf8(
-                bytes
-                    .get(CODE_SIZE..)
-                    .ok_or(VortexError::InvalidPacket(
-                        "insufficient bytes for message".to_string(),
-                    ))?
-                    .to_vec(),
-            )?,
+        Ok(Self {
+            code: Code::from(*code),
+            message: String::from_utf8(message.to_vec())?,
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::type_complexity)]
+
     use super::*;
-    use bytes::Bytes;
+    use bytes::BytesMut;
 
     #[test]
-    fn test_new() {
-        let code = Code::InvalidArgument;
-        let message = "Invalid argument".to_string();
-        let error = Error::new(code, message.clone());
+    fn code_converts_from_and_into_every_range() {
+        let test_cases = vec![
+            (0, Code::Unknown),
+            (1, Code::InvalidArgument),
+            (2, Code::NotFound),
+            (3, Code::Internal),
+            (4, Code::Reserved(4)),
+            (255, Code::Reserved(255)),
+        ];
 
-        assert_eq!(error.code(), code);
-        assert_eq!(error.message(), message);
-        assert_eq!(error.len(), message.len() + CODE_SIZE);
+        for (value, code) in test_cases {
+            assert_eq!(Code::from(value), code);
+            assert_eq!(u8::from(code), value);
+        }
     }
 
     #[test]
-    fn test_is_non_empty() {
-        let error_non_empty = Error::new(Code::Unknown, "Error message".to_string());
-        assert!(!error_non_empty.is_empty());
+    fn encode_writes_the_wire_layout() {
+        let error = Error::new(Code::Internal, "boom".to_string());
+        let mut buffer = BytesMut::new();
+        error.encode(&mut buffer);
+
+        assert_eq!(buffer.len(), error.encoded_len());
+        assert_eq!(buffer[0], 3);
+        assert_eq!(&buffer[CODE_SIZE..], b"boom");
     }
 
     #[test]
-    fn test_to_bytes_and_from_bytes() {
-        let code = Code::NotFound;
-        let message = "Resource not found".to_string();
-        let error = Error::new(code, message.clone());
+    fn decode_roundtrips() {
+        let test_cases = vec![
+            Error::new(Code::NotFound, "piece not found".to_string()),
+            Error::new(Code::Reserved(200), String::new()),
+        ];
 
-        let bytes: Bytes = error.into();
-        let error = Error::try_from(bytes).unwrap();
-
-        assert_eq!(error.code(), code);
-        assert_eq!(error.message(), message);
+        for error in test_cases {
+            let mut buffer = BytesMut::new();
+            error.encode(&mut buffer);
+            assert_eq!(Error::decode(&buffer).unwrap(), error);
+        }
     }
 
     #[test]
-    fn test_from_bytes_invalid_input() {
-        let invalid_bytes = Bytes::from("");
-        assert!(Error::try_from(invalid_bytes).is_err());
+    fn decode_rejects_malformed_input() {
+        let test_cases: Vec<(&[u8], fn(Result<Error>))> = vec![
+            (&[], |result| {
+                assert!(matches!(result, Err(VortexError::InvalidLength(_))))
+            }),
+            (&[3, 0xFF], |result| {
+                assert!(matches!(result, Err(VortexError::FromUtf8Error(_))))
+            }),
+        ];
+
+        for (buffer, expect) in test_cases {
+            expect(Error::decode(buffer));
+        }
     }
 }

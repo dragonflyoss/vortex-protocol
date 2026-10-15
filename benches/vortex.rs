@@ -14,354 +14,97 @@
  * limitations under the License.
  */
 
-use bytes::Bytes;
-use chrono::Utc;
+use bytes::BytesMut;
+use chrono::DateTime;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::time::Duration;
-use vortex_protocol::tlv::cache_piece_content::CachePieceContent;
-use vortex_protocol::tlv::download_cache_piece::DownloadCachePiece;
-use vortex_protocol::tlv::download_persistent_cache_piece::DownloadPersistentCachePiece;
-use vortex_protocol::tlv::download_persistent_piece::DownloadPersistentPiece;
 use vortex_protocol::tlv::download_piece::DownloadPiece;
-use vortex_protocol::tlv::persistent_cache_piece_content::PersistentCachePieceContent;
-use vortex_protocol::tlv::persistent_piece_content::PersistentPieceContent;
+use vortex_protocol::tlv::error::{Code, Error};
 use vortex_protocol::tlv::piece_content::PieceContent;
+use vortex_protocol::tlv::piece_metadata::PieceMetadata;
 use vortex_protocol::tlv::Tag;
-use vortex_protocol::Vortex;
+use vortex_protocol::tlv::TASK_ID_SIZE;
+use vortex_protocol::{Header, Message, Vortex};
 
-fn vortex_packet_creation(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Vortex Packet Creation");
+fn piece_content() -> PieceContent {
+    PieceContent {
+        metadata: PieceMetadata {
+            number: 1,
+            offset: 1,
+            length: 10,
+            digest: "crc32:864bbb04".to_string(),
+            parent_id: "127.0.0.1-foo".to_string(),
+            traffic_type: 1,
+            cost: Duration::from_secs(30),
+            created_at: DateTime::from_timestamp(1_700_000_000, 0)
+                .unwrap()
+                .naive_utc(),
+        },
+    }
+}
 
-    group.bench_function("Create DownloadPiece Vortex", |b| {
+fn bench_message<M: Message + Clone>(c: &mut Criterion, name: &str, message: M) {
+    let mut group = c.benchmark_group(name);
+    let mut buffer = BytesMut::with_capacity(message.encoded_len());
+
+    group.bench_function("encode", |b| {
         b.iter(|| {
-            let tag = black_box(Tag::DownloadPiece);
-            let value = black_box(
-                DownloadPiece::new(
-                    "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-                    42,
-                )
-                .into(),
-            );
-
-            let _ = Vortex::new(tag, value);
-        });
+            buffer.clear();
+            black_box(&message).encode(&mut buffer);
+            black_box(&buffer);
+        })
     });
 
-    group.bench_function("Create DownloadCachePiece Vortex", |b| {
+    group.bench_function("encode_packet", |b| {
         b.iter(|| {
-            let tag = black_box(Tag::DownloadCachePiece);
-            let value = black_box(
-                DownloadCachePiece::new(
-                    "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-                    42,
-                )
-                .into(),
-            );
-
-            let _ = Vortex::new(tag, value);
-        });
+            buffer.clear();
+            black_box(&message).encode_packet(&mut buffer);
+            black_box(&buffer);
+        })
     });
 
-    group.bench_function("Create DownloadPersistentPiece Vortex", |b| {
-        b.iter(|| {
-            let tag = black_box(Tag::DownloadPersistentPiece);
-            let value = black_box(
-                DownloadPersistentPiece::new(
-                    "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-                    42,
-                )
-                .into(),
-            );
-
-            let _ = Vortex::new(tag, value);
-        });
+    buffer.clear();
+    message.encode(&mut buffer);
+    group.bench_function("decode", |b| {
+        b.iter(|| black_box(M::decode(black_box(&buffer))).unwrap())
     });
-
-    group.bench_function("Create DownloadPersistentCachePiece Vortex", |b| {
-        b.iter(|| {
-            let tag = black_box(Tag::DownloadPersistentCachePiece);
-            let value = black_box(
-                DownloadPersistentCachePiece::new(
-                    "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-                    42,
-                )
-                .into(),
-            );
-
-            let _ = Vortex::new(tag, value);
-        });
-    });
-
     group.finish();
 }
 
-fn vortex_packet_serialization(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Vortex Packet Serialization");
+fn messages(c: &mut Criterion) {
+    bench_message(
+        c,
+        "DownloadPiece",
+        DownloadPiece::new("a".repeat(TASK_ID_SIZE), 42),
+    );
+    bench_message(c, "PieceContent", piece_content());
+    bench_message(
+        c,
+        "Error",
+        Error::new(Code::NotFound, "piece not found".to_string()),
+    );
+}
 
-    group.bench_function("Serialize PieceContent Packet", |b| {
+fn packets(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Vortex");
+    let packet = Vortex::PieceContent(Header::new(Tag::PieceContent, 0), piece_content());
+    let mut buffer = BytesMut::with_capacity(packet.encoded_len());
+
+    group.bench_function("encode", |b| {
         b.iter(|| {
-            let piece_content = black_box(PieceContent::new(
-                1,
-                1,
-                10,
-                "crc32:864bbb04".to_string(),
-                "127.0.0.1-foo".to_string(),
-                1,
-                Duration::from_secs(30),
-                Utc::now().naive_utc(),
-            ));
-
-            let _bytes: Bytes = piece_content.into();
-        });
+            buffer.clear();
+            black_box(&packet).encode(&mut buffer);
+            black_box(&buffer);
+        })
     });
 
-    group.bench_function("Serialize DownloadPiece Packet", |b| {
-        b.iter(|| {
-            let download_piece = black_box(DownloadPiece::new(
-                "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-                42,
-            ));
-
-            let _bytes: Bytes = download_piece.into();
-        });
+    buffer.clear();
+    packet.encode(&mut buffer);
+    group.bench_function("decode", |b| {
+        b.iter(|| black_box(Vortex::decode(black_box(&buffer))).unwrap())
     });
-
-    group.bench_function("Serialize CachePieceContent Packet", |b| {
-        b.iter(|| {
-            let cache_piece_content = black_box(CachePieceContent::new(
-                1,
-                1,
-                10,
-                "crc32:864bbb04".to_string(),
-                "127.0.0.1-foo".to_string(),
-                1,
-                Duration::from_secs(30),
-                Utc::now().naive_utc(),
-            ));
-
-            let _bytes: Bytes = cache_piece_content.into();
-        });
-    });
-
-    group.bench_function("Serialize DownloadCachePiece Packet", |b| {
-        b.iter(|| {
-            let download_cache_piece = black_box(DownloadCachePiece::new(
-                "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-                42,
-            ));
-
-            let _bytes: Bytes = download_cache_piece.into();
-        });
-    });
-
-    group.bench_function("Serialize PersistentPieceContent Packet", |b| {
-        b.iter(|| {
-            let persistent_piece_content = black_box(PersistentPieceContent::new(
-                1,
-                1,
-                10,
-                "crc32:864bbb04".to_string(),
-                "127.0.0.1-foo".to_string(),
-                1,
-                Duration::from_secs(30),
-                Utc::now().naive_utc(),
-            ));
-
-            let _bytes: Bytes = persistent_piece_content.into();
-        });
-    });
-
-    group.bench_function("Serialize DownloadPersistentPiece Packet", |b| {
-        b.iter(|| {
-            let download_persistent_piece = black_box(DownloadPersistentPiece::new(
-                "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-                42,
-            ));
-
-            let _bytes: Bytes = download_persistent_piece.into();
-        });
-    });
-
-    group.bench_function("Serialize PersistentCachePieceContent Packet", |b| {
-        b.iter(|| {
-            let persistent_cache_piece_content = black_box(PersistentCachePieceContent::new(
-                1,
-                1,
-                10,
-                "crc32:864bbb04".to_string(),
-                "127.0.0.1-foo".to_string(),
-                1,
-                Duration::from_secs(30),
-                Utc::now().naive_utc(),
-            ));
-
-            let _bytes: Bytes = persistent_cache_piece_content.into();
-        });
-    });
-
-    group.bench_function("Serialize DownloadPersistentCachePiece Packet", |b| {
-        b.iter(|| {
-            let download_persistent_cache_piece = black_box(DownloadPersistentCachePiece::new(
-                "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-                42,
-            ));
-
-            let _bytes: Bytes = download_persistent_cache_piece.into();
-        });
-    });
-
     group.finish();
 }
 
-fn vortex_packet_deserialization(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Vortex Packet Deserialization");
-
-    group.bench_function("Deserialize PieceContent Packet", |b| {
-        b.iter(|| {
-            let bytes: Bytes = black_box(
-                PieceContent::new(
-                    1,
-                    1,
-                    10,
-                    "crc32:864bbb04".to_string(),
-                    "127.0.0.1-foo".to_string(),
-                    1,
-                    Duration::from_secs(30),
-                    Utc::now().naive_utc(),
-                )
-                .into(),
-            );
-
-            let _piece_content: PieceContent = bytes.try_into().unwrap();
-        });
-    });
-
-    group.bench_function("Deserialize DownloadPiece Packet", |b| {
-        b.iter(|| {
-            let bytes: Bytes = black_box(
-                DownloadPiece::new(
-                    "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-                    42,
-                )
-                .into(),
-            );
-
-            let _download_piece: DownloadPiece = bytes.try_into().unwrap();
-        });
-    });
-
-    group.bench_function("Deserialize CachePieceContent Packet", |b| {
-        b.iter(|| {
-            let bytes: Bytes = black_box(
-                CachePieceContent::new(
-                    1,
-                    1,
-                    10,
-                    "crc32:864bbb04".to_string(),
-                    "127.0.0.1-foo".to_string(),
-                    1,
-                    Duration::from_secs(30),
-                    Utc::now().naive_utc(),
-                )
-                .into(),
-            );
-
-            let _cache_piece_content: CachePieceContent = bytes.try_into().unwrap();
-        });
-    });
-
-    group.bench_function("Deserialize DownloadCachePiece Packet", |b| {
-        b.iter(|| {
-            let bytes: Bytes = black_box(
-                DownloadCachePiece::new(
-                    "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-                    42,
-                )
-                .into(),
-            );
-
-            let _download_cache_piece: DownloadCachePiece = bytes.try_into().unwrap();
-        });
-    });
-
-    group.bench_function("Deserialize PersistentPieceContent Packet", |b| {
-        b.iter(|| {
-            let bytes: Bytes = black_box(
-                PersistentPieceContent::new(
-                    1,
-                    1,
-                    10,
-                    "crc32:864bbb04".to_string(),
-                    "127.0.0.1-foo".to_string(),
-                    1,
-                    Duration::from_secs(30),
-                    Utc::now().naive_utc(),
-                )
-                .into(),
-            );
-
-            let _persistent_piece_content: PersistentPieceContent = bytes.try_into().unwrap();
-        });
-    });
-
-    group.bench_function("Deserialize DownloadPersistentPiece Packet", |b| {
-        b.iter(|| {
-            let bytes: Bytes = black_box(
-                DownloadPersistentPiece::new(
-                    "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-                    42,
-                )
-                .into(),
-            );
-
-            let _download_persistent_piece: DownloadPersistentPiece = bytes.try_into().unwrap();
-        });
-    });
-
-    group.bench_function("Deserialize PersistentCachePieceContent Packet", |b| {
-        b.iter(|| {
-            let bytes: Bytes = black_box(
-                PersistentCachePieceContent::new(
-                    1,
-                    1,
-                    10,
-                    "crc32:864bbb04".to_string(),
-                    "127.0.0.1-foo".to_string(),
-                    1,
-                    Duration::from_secs(30),
-                    Utc::now().naive_utc(),
-                )
-                .into(),
-            );
-
-            let _persistent_cache_piece_content: PersistentCachePieceContent =
-                bytes.try_into().unwrap();
-        });
-    });
-
-    group.bench_function("Deserialize DownloadPersistentCachePiece Packet", |b| {
-        b.iter(|| {
-            let bytes: Bytes = black_box(
-                DownloadPersistentCachePiece::new(
-                    "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-                    42,
-                )
-                .into(),
-            );
-
-            let _download_persistent_cache_piece: DownloadPersistentCachePiece =
-                bytes.try_into().unwrap();
-        });
-    });
-
-    group.finish();
-}
-
-criterion_group!(
-    benches,
-    vortex_packet_creation,
-    vortex_packet_serialization,
-    vortex_packet_deserialization
-);
-
+criterion_group!(benches, messages, packets);
 criterion_main!(benches);
